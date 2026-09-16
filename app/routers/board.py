@@ -12,6 +12,7 @@ from app.asset_version import asset_version
 from app.auth import get_current_user, require_login, require_role
 from app.database import get_db
 from app.excel_sync import sync_truck_data
+from app.truck_format import format_sv_code
 from app.truck_resolution import resolve_truck
 from app.ws_manager import manager
 
@@ -293,7 +294,7 @@ async def edit_or_create_truck(
         db.add(truck)
     truck.hod_code = payload.hod_code.strip() if payload.hod_code else None
     truck.placa = payload.placa.strip()
-    truck.sv_code = payload.sv_code.strip() if payload.sv_code else None
+    truck.sv_code = format_sv_code(payload.sv_code)
     db.flush()
 
     if is_new:

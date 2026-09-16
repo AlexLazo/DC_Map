@@ -21,6 +21,7 @@
   <a href="/admin/dashboard" class="admin-tab">Dashboard</a>
   <a href="/admin/bitacora" class="admin-tab">Bitácora</a>
   <a href="/admin/reportes" class="admin-tab">Reportes</a>
+  <a href="/admin/config" class="admin-tab">Configuración</a>
 </nav>
 
 <main class="admin-main">
@@ -31,6 +32,26 @@
         <thead><tr><th>Usuario</th><th>Nombre</th><th>Rol</th><th>Activo</th><th></th></tr></thead>
         <tbody>
           {% for u in users %}
+          {% if edit_user and edit_user.id == u.id %}
+          <tr>
+            <td colspan="5">
+              <form method="post" action="/admin/users/{{ u.id }}/edit" class="inline-form">
+                <input name="full_name" value="{{ u.full_name }}" placeholder="nombre completo" required>
+                <select name="role">
+                  <option value="supervisor" {{ 'selected' if u.role == 'supervisor' }}>Supervisor</option>
+                  <option value="conductor_patio" {{ 'selected' if u.role == 'conductor_patio' }}>Conductor de Patio</option>
+                  {% if user.role == 'super_admin' %}
+                  <option value="admin" {{ 'selected' if u.role == 'admin' }}>Admin</option>
+                  <option value="super_admin" {{ 'selected' if u.role == 'super_admin' }}>Super Admin</option>
+                  {% endif %}
+                </select>
+                <input name="password" type="password" placeholder="dejar en blanco para no cambiar">
+                <button type="submit">Guardar</button>
+                <a href="/admin" class="btn-link">Cancelar</a>
+              </form>
+            </td>
+          </tr>
+          {% else %}
           <tr>
             <td>{{ u.username }}</td><td>{{ u.full_name }}</td>
             <td><span class="role-badge role-{{ u.role }}">{{ role_labels.get(u.role, u.role) }}</span></td>
@@ -39,12 +60,19 @@
               {% if u.role in ('admin', 'super_admin') and user.role != 'super_admin' %}
                 <span class="muted small">Solo Super Admin</span>
               {% else %}
+              <a href="/admin?edit={{ u.id }}" class="btn-link">Editar</a>
               <form method="post" action="/admin/users/{{ u.id }}/toggle" class="inline">
                 <button class="btn-link" type="submit">{{ 'Desactivar' if u.active else 'Activar' }}</button>
               </form>
+              {% if u.id != user.id %}
+              <form method="post" action="/admin/users/{{ u.id }}/delete" class="inline" onsubmit="return confirm('¿Eliminar la cuenta {{ u.username }} para siempre? Esto no se puede deshacer.');">
+                <button class="btn-link danger" type="submit">Eliminar</button>
+              </form>
+              {% endif %}
               {% endif %}
             </td>
           </tr>
+          {% endif %}
           {% endfor %}
         </tbody>
       </table>

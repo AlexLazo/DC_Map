@@ -21,6 +21,7 @@
   <a href="/admin/dashboard" class="admin-tab">Dashboard</a>
   <a href="/admin/bitacora" class="admin-tab active">Bitácora</a>
   <a href="/admin/reportes" class="admin-tab">Reportes</a>
+  <a href="/admin/config" class="admin-tab">Configuración</a>
 </nav>
 
 <main class="admin-main wide">
@@ -43,8 +44,36 @@
         {% endfor %}
       </select>
       <button type="submit" class="btn-primary-sm">Filtrar</button>
+      <a class="btn-primary-sm" href="/admin/reportes/camiones.csv?fecha={{ fecha }}">⬇ Camiones del día (CSV)</a>
     </form>
+  </section>
 
+  <section class="admin-section">
+    <h2>Camiones del día ({{ truck_rows|length }}) — {{ fecha }}</h2>
+    <p class="muted small">Estatus final de cada Spot esa fecha: quién quedó cargado (y a qué hora), y por qué los demás no.</p>
+    <div class="table-scroll">
+      <table class="admin-table">
+        <thead><tr><th>Spot</th><th>Supervisor</th><th>Placa</th><th>HOD</th><th>SV</th><th>Estatus</th><th>Hora</th><th>Comentario</th><th>Marcado por</th></tr></thead>
+        <tbody>
+          {% for r in truck_rows %}
+          <tr>
+            <td>{{ r.code }}</td>
+            <td>{{ r.supervisor_name or '-' }}</td>
+            <td>{{ (r.truck and r.truck.placa) or '-' }}</td>
+            <td>{{ (r.truck and r.truck.hod_code) or '-' }}</td>
+            <td>{{ (r.truck and r.truck.sv_code) or '-' }}</td>
+            <td><span class="status-pill {{ r.status }}">{{ {'pendiente': 'Pendiente', 'carga_en_piso': 'Carga en Piso', 'cargado': 'Cargado', 'no_cargado': 'No Cargado'}[r.status] }}</span></td>
+            <td>{{ (r.hora_cargado|local_time).strftime('%H:%M') if r.hora_cargado else '-' }}</td>
+            <td>{{ r.comentario or '-' }}</td>
+            <td>{{ r.updated_by or '-' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="admin-section">
     <h2>{{ entries|length }} evento(s) el {{ fecha }}</h2>
     <div class="table-scroll">
       <table class="admin-table">
@@ -52,7 +81,7 @@
         <tbody>
           {% for e in entries %}
           <tr>
-            <td>{{ e.timestamp.strftime('%H:%M:%S') }}</td>
+            <td>{{ (e.timestamp|local_time).strftime('%H:%M:%S') }}</td>
             <td>{{ e.user.full_name if e.user else '-' }}</td>
             <td>{{ actions.get(e.action, e.action) }}</td>
             <td>{{ e.spot.code if e.spot else '-' }}</td>

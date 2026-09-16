@@ -83,10 +83,31 @@ async def _watch_excel_for_changes() -> None:
             await manager.broadcast({"type": "layout_update"})
 
 
+def _sync_excel_on_startup() -> None:
+    """Corre `sync_truck_data()` una vez al arrancar, además del watcher de
+    abajo. Hace falta porque en un host como Railway el Excel llega nuevo en
+    CADA deploy (viene del repo de git) pero no vuelve a cambiar mientras ese
+    contenedor sigue vivo -- sin esto, el watcher (que solo dispara cuando el
+    mtime CAMBIA en caliente) nunca sincronizaría nada en producción."""
+    db = SessionLocal()
+    try:
+        stats = sync_truck_data(db)
+    except Exception as exc:
+        print(f"[excel-sync] no se pudo sincronizar al arrancar: {exc}")
+        return
+    finally:
+        db.close()
+    if "error" in stats:
+        print(f"[excel-sync] {stats['error']}")
+    else:
+        print(f"[excel-sync] Sincronizado al arrancar -> {stats}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(engine)
     ensure_default_admin()
+    _sync_excel_on_startup()
     watcher = asyncio.create_task(_watch_excel_for_changes())
     yield
     watcher.cancel()

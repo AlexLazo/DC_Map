@@ -21,6 +21,7 @@
   <a href="/admin/dashboard" class="admin-tab active">Dashboard</a>
   <a href="/admin/bitacora" class="admin-tab">Bitácora</a>
   <a href="/admin/reportes" class="admin-tab">Reportes</a>
+  <a href="/admin/config" class="admin-tab">Configuración</a>
 </nav>
 
 <main class="admin-main">
@@ -29,7 +30,27 @@
       <label for="fecha">Fecha:</label>
       <input type="date" id="fecha" name="fecha" value="{{ fecha }}" onchange="this.form.submit()">
     </form>
+  </section>
 
+  <section class="admin-section">
+    <h2>Resumen Ejecutivo</h2>
+    <div class="kpi-row">
+      <div class="kpi-card {{ 'cargado' if resumen.delta_pct >= 0 else 'no_cargado' }}">
+        <div class="kpi-value">{{ '▲' if resumen.delta_pct >= 0 else '▼' }} {{ resumen.delta_pct|abs }} pts</div>
+        <div class="kpi-label">% Cargado vs. ayer</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-value">{{ '%02d:00'|format(resumen.peak_hour) if resumen.peak_hour is not none else '-' }}</div>
+        <div class="kpi-label">Hora pico de carga (7 días)</div>
+      </div>
+      <div class="kpi-card {{ 'no_cargado' if resumen.incidencias else 'cargado' }}">
+        <div class="kpi-value">{{ resumen.incidencias }}</div>
+        <div class="kpi-label">Incidencia(s) sin resolver</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="admin-section">
     <div class="kpi-row">
       <div class="kpi-card">
         <div class="kpi-value">{{ summary.total }}</div>
@@ -142,6 +163,23 @@
           {% endfor %}
         </tbody>
       </table>
+    </div>
+  </section>
+
+  <section class="admin-section">
+    <h2>Horas productivas (últimos 7 días)</h2>
+    <p class="muted small">Camiones marcados "Cargado" por hora del día (hora local). La franja sombreada es la ventana real de turno (10PM–9AM).</p>
+    <div class="hour-chart-wrap">
+      <div class="hour-chart">
+        {% for count in hourly_profile %}
+        <div class="hour-col {{ 'shift' if loop.index0 >= 22 or loop.index0 < 9 else '' }}">
+          <div class="hour-bar" title="{{ '%02d:00'|format(loop.index0) }} — {{ count }} camión(es)">
+            <div class="hour-bar-fill" style="height: {{ (100 * count / hourly_max)|round(1) }}%"></div>
+          </div>
+          <div class="hour-col-label">{{ loop.index0 }}</div>
+        </div>
+        {% endfor %}
+      </div>
     </div>
   </section>
 </main>

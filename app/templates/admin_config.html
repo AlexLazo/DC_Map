@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Configuración - DC Map</title>
+<link rel="stylesheet" href="/static/css/styles.css?v={{ asset_version }}">
+</head>
+<body class="admin-body">
+<header class="topbar">
+  <div class="topbar-left"><h1>Administración</h1></div>
+  <div class="topbar-right">
+    <span class="user-badge">{{ user.full_name }} · {{ 'Super Admin' if user.role == 'super_admin' else 'Admin' }}</span>
+    <a href="/" class="btn-link">&larr; Tablero</a>
+    <form method="post" action="/logout" class="inline"><button class="btn-link" type="submit">Salir</button></form>
+  </div>
+</header>
+
+<nav class="admin-tabs">
+  <a href="/admin" class="admin-tab">Usuarios y Camiones</a>
+  <a href="/admin/dashboard" class="admin-tab">Dashboard</a>
+  <a href="/admin/bitacora" class="admin-tab">Bitácora</a>
+  <a href="/admin/reportes" class="admin-tab">Reportes</a>
+  <a href="/admin/config" class="admin-tab active">Configuración</a>
+</nav>
+
+<main class="admin-main">
+  <section class="admin-section">
+    <h2>Respaldo completo</h2>
+    <p class="muted small">Descarga TODA la información del sistema (usuarios, camiones, Spots, etiquetas, estatus diarios y bitácora completa) en un solo archivo JSON. Guárdalo en un lugar seguro antes de cambios grandes -- si algún día hay que restaurar, este archivo tiene todo lo necesario.</p>
+    <div class="kpi-row">
+      <div class="kpi-card"><div class="kpi-value">{{ counts.users }}</div><div class="kpi-label">Usuarios</div></div>
+      <div class="kpi-card"><div class="kpi-value">{{ counts.trucks }}</div><div class="kpi-label">Camiones</div></div>
+      <div class="kpi-card"><div class="kpi-value">{{ counts.spots }}</div><div class="kpi-label">Spots</div></div>
+      <div class="kpi-card"><div class="kpi-value">{{ counts.labels }}</div><div class="kpi-label">Etiquetas</div></div>
+      <div class="kpi-card"><div class="kpi-value">{{ counts.daily_status }}</div><div class="kpi-label">Estatus diarios</div></div>
+      <div class="kpi-card"><div class="kpi-value">{{ counts.activity_log }}</div><div class="kpi-label">Eventos de bitácora</div></div>
+    </div>
+    <p></p>
+    <a class="btn-primary-sm" href="/admin/config/backup.json">⬇ Descargar respaldo completo (JSON)</a>
+  </section>
+
+  <section class="admin-section">
+    <h2>Acerca de</h2>
+    <p class="muted small">DC Map · CD Soyapango. El layout (Spots, camiones, etiquetas) se sincroniza automáticamente desde el Excel del repositorio en cada arranque/despliegue -- para actualizarlo, edita el Excel y súbelo con un commit normal.</p>
+  </section>
+</main>
+</body>
+</html>

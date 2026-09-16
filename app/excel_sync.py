@@ -20,6 +20,7 @@ import openpyxl
 from sqlalchemy.orm import Session
 
 from app import models
+from app.truck_format import format_sv_code
 
 EXCEL_PATH = Path(__file__).resolve().parent.parent / "LAY OUT PARQUEO (CD SOYAPANGO) V2.xlsx"
 SHEET = "PARQUEOS "
@@ -129,7 +130,7 @@ def extract_placa_blocks(ws, legend: dict[str, str]):
             sv_label = ws.cell(row=r + 1, column=c).value
             if isinstance(sv_label, str) and sv_label.strip().upper() == "SV":
                 sv_val = ws.cell(row=r + 1, column=c + 2).value
-                sv_code = str(sv_val).strip() if sv_val not in (None, "") else None
+                sv_code = format_sv_code(sv_val)
 
             hod_code = None
             supervisor_from_label = None
@@ -199,7 +200,7 @@ def extract_bare_code_spots(ws, covered: set):
             sv_cell = ws.cell(row=r, column=c + 1).value
             m = SV_TEXT_PATTERN.match(sv_cell.strip()) if isinstance(sv_cell, str) else None
             if m:
-                sv_code = m.group(1)
+                sv_code = format_sv_code(m.group(1))
                 placa_cell = ws.cell(row=r + 4, column=c + 1).value
                 placa_val = str(placa_cell).strip() if placa_cell not in (None, "") else None
 
@@ -244,7 +245,7 @@ def extract_relevo_spots(ws, covered: set):
                 color_hex=resolve_fill_color(cell),
                 grid_row=r, grid_col=c,
                 row_span=1, col_span=2,
-                hod_code=None, placa=None, sv_code=m.group(1),
+                hod_code=None, placa=None, sv_code=format_sv_code(m.group(1)),
             ))
     return spots
 

@@ -41,6 +41,8 @@ let spotsById = {};
 let labelsById = {};
 let currentSpotId = null;
 let currentFilter = 'todos';
+let searchQuery = '';
+let hasScrolledToContent = false;
 let editMode = false;
 let selected = []; // Array<{ type: 'spot' | 'label', id: number }> -- selección múltiple
 let lastRowSizes = [];
@@ -91,6 +93,11 @@ function renderBoard(data) {
 
   document.getElementById('readonly-banner').style.display = data.is_today ? 'none' : 'block';
   applyFilter();
+  highlightSearch();
+  if (!hasScrolledToContent) {
+    hasScrolledToContent = true;
+    scrollToFirstContent(data);
+  }
   // Re-marca visualmente lo que seguía seleccionado (algunos pueden haber
   // sido borrados por otra persona mientras tanto).
   selected = selected.filter((s) => (s.type === 'spot' ? spotsById[s.id] : labelsById[s.id]));
@@ -98,6 +105,29 @@ function renderBoard(data) {
     const el = itemElement(s);
     if (el) el.classList.add('selected');
   }
+}
+
+// El clon literal del Excel arrastra el margen vacío real de la hoja -- el
+// primer Spot casi nunca está en la esquina (0,0) del grid, así que abrir el
+// tablero sin esto deja al usuario viendo una pantalla en blanco hasta que
+// adivina hacia dónde desplazarse. En un monitor ancho de escritorio pasa
+// casi inadvertido (se alcanza a ver algo de contenido de reojo); en una
+// tablet o celular la pantalla completa queda en blanco. Solo corre una vez,
+// al cargar por primera vez -- no en cada actualización en vivo, para no
+// arrancarle el scroll a alguien que ya está trabajando en otra parte del mapa.
+function scrollToFirstContent(data) {
+  if (!data.spots.length) return;
+  // OJO: el más arriba y el más a la izquierda pueden ser Spots distintos --
+  // tomar min(grid_row) y min(grid_col) por separado apunta a una esquina
+  // que puede no tener ningún Spot real cerca (mayormente vacía otra vez).
+  // Hay que usar la posición de UN solo Spot real.
+  const first = data.spots.reduce((best, s) =>
+    s.grid_row < best.grid_row || (s.grid_row === best.grid_row && s.grid_col < best.grid_col) ? s : best
+  );
+  const pxBefore = (sizes, line) => sizes.slice(0, line - 1).reduce((a, b) => a + b, 0);
+  const top = pxBefore(data.row_sizes, first.grid_row) * zoom;
+  const left = pxBefore(data.col_sizes, first.grid_col) * zoom;
+  document.querySelector('.map-scroll').scrollTo({ left: Math.max(0, left - 20), top: Math.max(0, top - 20) });
 }
 
 function renderMapLabel(label) {
@@ -185,6 +215,66 @@ document.querySelectorAll('.filter-btn').forEach((btn) => {
     applyFilter();
   });
 });
+
+// Buscador de SV/ruta/placa: resalta el o los Spots que hacen match (color
+// distinto + pulso) y apaga el resto -- para no tener que ir tile por tile
+// en un grid tan denso, sobre todo en tablet/celular. Compara contra todo lo
+// que identifica al camión, no solo un campo, porque "ruta" en la práctica
+// puede ser el SV, el supervisor/zona, o la placa según cómo lo busquen.
+function matchesSearch(spot, q) {
+  const t = spot.truck;
+  const haystack = [spot.code, spot.supervisor_name, t && t.placa, t && t.hod_code, t && t.sv_code]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+  return haystack.includes(q);
+}
+
+function highlightSearch() {
+  const q = searchQuery.trim().toLowerCase();
+  const clearBtn = document.getElementById('spot-search-clear');
+  if (clearBtn) clearBtn.style.display = q ? '' : 'none';
+
+  if (!q) {
+    document.querySelectorAll('.search-match, .search-dimmed').forEach((el) => el.classList.remove('search-match', 'search-dimmed'));
+    return null;
+  }
+  let firstMatchEl = null;
+  for (const spot of Object.values(spotsById)) {
+    const el = document.getElementById(`spot-${spot.id}`);
+    if (!el) continue;
+    const isMatch = matchesSearch(spot, q);
+    el.classList.toggle('search-match', isMatch);
+    el.classList.toggle('search-dimmed', !isMatch);
+    if (isMatch && !firstMatchEl) firstMatchEl = el;
+  }
+  document.querySelectorAll('.map-label').forEach((el) => el.classList.add('search-dimmed'));
+  return firstMatchEl;
+}
+
+const spotSearchInput = document.getElementById('spot-search');
+const spotSearchClear = document.getElementById('spot-search-clear');
+if (spotSearchInput) {
+  spotSearchInput.addEventListener('input', () => {
+    searchQuery = spotSearchInput.value;
+    // Un match escondido por el filtro de estatus (p.ej. buscando un camión
+    // "Pendiente" con el filtro en "Cargado") nunca se vería -- al buscar,
+    // el filtro vuelve a "Todos" para que el resultado siempre aparezca.
+    if (searchQuery.trim() && currentFilter !== 'todos') {
+      currentFilter = 'todos';
+      document.querySelectorAll('.filter-btn').forEach((b) => b.classList.toggle('active', b.dataset.filter === 'todos'));
+      applyFilter();
+    }
+    const firstMatch = highlightSearch();
+    if (firstMatch) firstMatch.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+  });
+  spotSearchClear.addEventListener('click', () => {
+    spotSearchInput.value = '';
+    searchQuery = '';
+    highlightSearch();
+    spotSearchInput.focus();
+  });
+}
 
 function tileTooltip(spot) {
   let t = `${displayCode(spot)} · ${STATUS_LABELS[spot.status]}`;
