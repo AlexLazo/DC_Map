@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Admin - DC Map</title>
+<link rel="stylesheet" href="/static/css/styles.css?v={{ asset_version }}">
+</head>
+<body class="admin-body">
+<header class="topbar">
+  <div class="topbar-left"><h1>Administración</h1></div>
+  <div class="topbar-right">
+    <span class="user-badge">{{ user.full_name }} · {{ 'Super Admin' if user.role == 'super_admin' else 'Admin' }}</span>
+    <a href="/" class="btn-link">&larr; Tablero</a>
+    <form method="post" action="/logout" class="inline"><button class="btn-link" type="submit">Salir</button></form>
+  </div>
+</header>
+
+<nav class="admin-tabs">
+  <a href="/admin" class="admin-tab active">Usuarios y Camiones</a>
+  <a href="/admin/dashboard" class="admin-tab">Dashboard</a>
+  <a href="/admin/bitacora" class="admin-tab">Bitácora</a>
+  <a href="/admin/reportes" class="admin-tab">Reportes</a>
+</nav>
+
+<main class="admin-main">
+  <section class="admin-section">
+    <h2>Usuarios</h2>
+    <div class="table-scroll">
+      <table class="admin-table">
+        <thead><tr><th>Usuario</th><th>Nombre</th><th>Rol</th><th>Activo</th><th></th></tr></thead>
+        <tbody>
+          {% for u in users %}
+          <tr>
+            <td>{{ u.username }}</td><td>{{ u.full_name }}</td>
+            <td><span class="role-badge role-{{ u.role }}">{{ role_labels.get(u.role, u.role) }}</span></td>
+            <td><span class="status-dot {{ 'on' if u.active else 'off' }}"></span>{{ 'Activo' if u.active else 'Inactivo' }}</td>
+            <td>
+              {% if u.role in ('admin', 'super_admin') and user.role != 'super_admin' %}
+                <span class="muted small">Solo Super Admin</span>
+              {% else %}
+              <form method="post" action="/admin/users/{{ u.id }}/toggle" class="inline">
+                <button class="btn-link" type="submit">{{ 'Desactivar' if u.active else 'Activar' }}</button>
+              </form>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <form method="post" action="/admin/users" class="inline-form">
+      <input name="username" placeholder="usuario" required>
+      <input name="password" type="password" placeholder="contraseña" required>
+      <input name="full_name" placeholder="nombre completo" required>
+      <select name="role">
+        <option value="supervisor">Supervisor</option>
+        <option value="conductor_patio">Conductor de Patio</option>
+        {% if user.role == 'super_admin' %}
+        <option value="admin">Admin</option>
+        <option value="super_admin">Super Admin</option>
+        {% endif %}
+      </select>
+      <button type="submit">Crear usuario</button>
+    </form>
+    {% if user.role != 'super_admin' %}
+    <p class="muted small">Solo un Super Admin puede crear o activar/desactivar cuentas Admin/Super Admin.</p>
+    {% endif %}
+  </section>
+
+  <section class="admin-section">
+    <h2>Camiones ({{ trucks|length }})</h2>
+    <div class="table-scroll">
+      <table class="admin-table">
+        <thead><tr><th>HOD</th><th>Placa</th><th>SV</th></tr></thead>
+        <tbody>
+          {% for t in trucks %}
+          <tr><td>{{ t.hod_code or '-' }}</td><td>{{ t.placa or '-' }}</td><td>{{ t.sv_code or '-' }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <form method="post" action="/admin/trucks" class="inline-form">
+      <input name="hod_code" placeholder="HOD (opcional)">
+      <input name="placa" placeholder="Placa" required>
+      <input name="sv_code" placeholder="SV (opcional)">
+      <button type="submit">Agregar camión</button>
+    </form>
+  </section>
+</main>
+</body>
+</html>

@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dashboard - DC Map</title>
+<link rel="stylesheet" href="/static/css/styles.css?v={{ asset_version }}">
+</head>
+<body class="admin-body">
+<header class="topbar">
+  <div class="topbar-left"><h1>Administración</h1></div>
+  <div class="topbar-right">
+    <span class="user-badge">{{ user.full_name }} · {{ 'Super Admin' if user.role == 'super_admin' else 'Admin' }}</span>
+    <a href="/" class="btn-link">&larr; Tablero</a>
+    <form method="post" action="/logout" class="inline"><button class="btn-link" type="submit">Salir</button></form>
+  </div>
+</header>
+
+<nav class="admin-tabs">
+  <a href="/admin" class="admin-tab">Usuarios y Camiones</a>
+  <a href="/admin/dashboard" class="admin-tab active">Dashboard</a>
+  <a href="/admin/bitacora" class="admin-tab">Bitácora</a>
+  <a href="/admin/reportes" class="admin-tab">Reportes</a>
+</nav>
+
+<main class="admin-main">
+  <section class="admin-section">
+    <form method="get" action="/admin/dashboard" class="filter-row">
+      <label for="fecha">Fecha:</label>
+      <input type="date" id="fecha" name="fecha" value="{{ fecha }}" onchange="this.form.submit()">
+    </form>
+
+    <div class="kpi-row">
+      <div class="kpi-card">
+        <div class="kpi-value">{{ summary.total }}</div>
+        <div class="kpi-label">Total Spots</div>
+      </div>
+      <div class="kpi-card cargado">
+        <div class="kpi-value">{{ summary.pct_cargado }}%</div>
+        <div class="kpi-label">Cargado</div>
+      </div>
+      <div class="kpi-card pendiente">
+        <div class="kpi-value">{{ summary.counts.pendiente }}</div>
+        <div class="kpi-label">Pendiente</div>
+      </div>
+      <div class="kpi-card carga_en_piso">
+        <div class="kpi-value">{{ summary.counts.carga_en_piso }}</div>
+        <div class="kpi-label">Carga en Piso</div>
+      </div>
+      <div class="kpi-card cargado">
+        <div class="kpi-value">{{ summary.counts.cargado }}</div>
+        <div class="kpi-label">Cargado</div>
+      </div>
+      <div class="kpi-card no_cargado">
+        <div class="kpi-value">{{ summary.counts.no_cargado }}</div>
+        <div class="kpi-label">No Cargado</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="admin-section">
+    <h2>Problemas del día ({{ problemas|length }})</h2>
+    {% if problemas %}
+    <div class="table-scroll">
+      <table class="admin-table">
+        <thead><tr><th>Spot</th><th>Placa</th><th>Comentario</th><th>Reportado por</th></tr></thead>
+        <tbody>
+          {% for p in problemas %}
+          <tr>
+            <td>{{ p.code }}</td>
+            <td>{{ p.placa or '-' }}</td>
+            <td>{{ p.comentario or '-' }}</td>
+            <td>{{ p.updated_by or '-' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="empty-state">Sin camiones marcados "No Cargado" en esta fecha.</p>
+    {% endif %}
+  </section>
+
+  <section class="admin-section">
+    <h2>Por supervisor</h2>
+    <div class="table-scroll">
+      <table class="admin-table">
+        <thead><tr><th>Supervisor</th><th>Total</th><th>Cargados</th><th>% Cargado</th></tr></thead>
+        <tbody>
+          {% for r in supervisor_rows %}
+          <tr>
+            <td>{{ r.name }}</td>
+            <td>{{ r.total }}</td>
+            <td>{{ r.cargado }}</td>
+            <td>
+              <div class="pct-bar" title="{{ r.pct }}%">
+                <div class="pct-bar-fill" style="width: {{ r.pct }}%"></div>
+                <span>{{ r.pct }}%</span>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="admin-section">
+    <h2>Últimos 7 días</h2>
+    <div class="trend-chart">
+      {% for t in trend %}
+      <div class="trend-col">
+        <div class="trend-bar" title="{{ t.fecha.isoformat() }}: {{ t.pct_cargado }}% cargado">
+          <div class="trend-seg no_cargado" style="height: {{ t.pct.no_cargado }}%"></div>
+          <div class="trend-seg pendiente" style="height: {{ t.pct.pendiente }}%"></div>
+          <div class="trend-seg carga_en_piso" style="height: {{ t.pct.carga_en_piso }}%"></div>
+          <div class="trend-seg cargado" style="height: {{ t.pct.cargado }}%"></div>
+        </div>
+        <div class="trend-col-label">{{ t.fecha.strftime('%d/%m') }}</div>
+      </div>
+      {% endfor %}
+    </div>
+    <div class="trend-legend">
+      <span><i class="dot cargado"></i>Cargado</span>
+      <span><i class="dot carga_en_piso"></i>Carga en Piso</span>
+      <span><i class="dot pendiente"></i>Pendiente</span>
+      <span><i class="dot no_cargado"></i>No Cargado</span>
+    </div>
+    <div class="table-scroll">
+      <table class="admin-table">
+        <thead><tr><th>Fecha</th><th>Pendiente</th><th>Carga en Piso</th><th>Cargado</th><th>No Cargado</th><th>% Cargado</th></tr></thead>
+        <tbody>
+          {% for t in trend %}
+          <tr>
+            <td>{{ t.fecha.isoformat() }}</td>
+            <td>{{ t.counts.pendiente }}</td>
+            <td>{{ t.counts.carga_en_piso }}</td>
+            <td>{{ t.counts.cargado }}</td>
+            <td>{{ t.counts.no_cargado }}</td>
+            <td>{{ t.pct_cargado }}%</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+</main>
+</body>
+</html>

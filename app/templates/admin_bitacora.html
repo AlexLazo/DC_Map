@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bitácora - DC Map</title>
+<link rel="stylesheet" href="/static/css/styles.css?v={{ asset_version }}">
+</head>
+<body class="admin-body">
+<header class="topbar">
+  <div class="topbar-left"><h1>Administración</h1></div>
+  <div class="topbar-right">
+    <span class="user-badge">{{ user.full_name }} · {{ 'Super Admin' if user.role == 'super_admin' else 'Admin' }}</span>
+    <a href="/" class="btn-link">&larr; Tablero</a>
+    <form method="post" action="/logout" class="inline"><button class="btn-link" type="submit">Salir</button></form>
+  </div>
+</header>
+
+<nav class="admin-tabs">
+  <a href="/admin" class="admin-tab">Usuarios y Camiones</a>
+  <a href="/admin/dashboard" class="admin-tab">Dashboard</a>
+  <a href="/admin/bitacora" class="admin-tab active">Bitácora</a>
+  <a href="/admin/reportes" class="admin-tab">Reportes</a>
+</nav>
+
+<main class="admin-main wide">
+  <section class="admin-section">
+    <form method="get" action="/admin/bitacora" class="filter-row">
+      <label for="fecha">Fecha:</label>
+      <input type="date" id="fecha" name="fecha" value="{{ fecha }}">
+      <label for="usuario_id">Usuario:</label>
+      <select id="usuario_id" name="usuario_id">
+        <option value="">Todos</option>
+        {% for u in all_users %}
+        <option value="{{ u.id }}" {{ 'selected' if selected_usuario_id == u.id else '' }}>{{ u.full_name }}</option>
+        {% endfor %}
+      </select>
+      <label for="accion">Acción:</label>
+      <select id="accion" name="accion">
+        <option value="">Todas</option>
+        {% for key, label in actions.items() %}
+        <option value="{{ key }}" {{ 'selected' if selected_accion == key else '' }}>{{ label }}</option>
+        {% endfor %}
+      </select>
+      <button type="submit" class="btn-primary-sm">Filtrar</button>
+    </form>
+
+    <h2>{{ entries|length }} evento(s) el {{ fecha }}</h2>
+    <div class="table-scroll">
+      <table class="admin-table">
+        <thead><tr><th>Hora</th><th>Usuario</th><th>Acción</th><th>Spot</th><th>Detalle</th></tr></thead>
+        <tbody>
+          {% for e in entries %}
+          <tr>
+            <td>{{ e.timestamp.strftime('%H:%M:%S') }}</td>
+            <td>{{ e.user.full_name if e.user else '-' }}</td>
+            <td>{{ actions.get(e.action, e.action) }}</td>
+            <td>{{ e.spot.code if e.spot else '-' }}</td>
+            <td>{{ e.detail }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if not entries %}
+    <p class="empty-state">Sin actividad registrada con estos filtros.</p>
+    {% endif %}
+  </section>
+</main>
+</body>
+</html>

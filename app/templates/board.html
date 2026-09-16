@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DC Map - Control de Carga</title>
+<link rel="stylesheet" href="/static/css/styles.css?v={{ asset_version }}">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-left">
+    <h1>CD Soyapango · Control de Carga</h1>
+    <div class="legend-stack">
+      <div class="legend">
+        <span class="legend-item"><i style="background:#9ca3af"></i>Pendiente</span>
+        <span class="legend-item"><i style="background:#ea580c"></i>⏳ Carga en Piso</span>
+        <span class="legend-item"><i style="background:#15803d"></i>✓ Cargado</span>
+        <span class="legend-item"><i style="background:#dc2626"></i>✕ No Cargado</span>
+      </div>
+      <div class="legend" id="supervisor-legend"></div>
+    </div>
+  </div>
+  <div class="topbar-right">
+    <input type="date" id="date-picker" value="{{ today }}">
+    <span class="user-badge">{{ user.full_name }} · {{ user.role }}</span>
+    {% if user.role in ('admin', 'super_admin') %}<a href="/admin" class="btn-link">Admin</a>{% endif %}
+    <form method="post" action="/logout" class="inline"><button class="btn-link" type="submit">Salir</button></form>
+  </div>
+</header>
+
+<div id="readonly-banner" class="readonly-banner" style="display:none">
+  Viendo historial (solo lectura) — vuelve a la fecha de hoy para editar.
+</div>
+
+<div class="toolbar">
+  <div class="status-filter" id="status-filter">
+    <button class="filter-btn active" data-filter="todos" type="button">Todos</button>
+    <button class="filter-btn" data-filter="pendiente" type="button">Pendiente</button>
+    <button class="filter-btn" data-filter="carga_en_piso" type="button">Carga en Piso</button>
+    <button class="filter-btn" data-filter="cargado" type="button">Cargado</button>
+    <button class="filter-btn" data-filter="no_cargado" type="button">No Cargado</button>
+  </div>
+  {% if user.role in ('admin', 'super_admin') %}
+  <div class="edit-mode-toggle">
+    <button id="edit-mode-btn" class="edit-btn" type="button">✏️ Editar Layout</button>
+    <button id="new-label-btn" class="edit-btn" type="button" style="display:none">🏷️ Nueva Etiqueta</button>
+    <button id="sync-excel-btn" class="edit-btn" type="button" title="El Excel se revisa solo cada 20s; usa esto para no esperar">🔄 Sincronizar Excel</button>
+    <span id="edit-mode-hint" class="muted small" style="display:none">
+      Arrastra para mover (Ctrl/Shift+clic = varios a la vez) · clic en espacio vacío = crear Spot (o etiqueta, con "Nueva Etiqueta" activo) · flechas mueve · Shift+flechas redimensiona · Supr elimina · doble clic en etiqueta = renombrar · Ctrl+C/Ctrl+V copia y pega · Ctrl+Z deshace · Esc suelta
+    </span>
+  </div>
+  {% endif %}
+  <div class="zoom-controls">
+    <button id="zoom-out" type="button">−</button>
+    <button id="zoom-in" type="button">+</button>
+  </div>
+</div>
+
+<div class="map-wrapper">
+  <div class="map-scroll">
+    <div class="map" id="map"></div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="modal">
+  <div class="modal-card">
+    <div class="modal-header">
+      <h2 id="modal-title"></h2>
+      <button id="modal-close" class="btn-icon" type="button">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-row">
+        <span class="badge" id="modal-status"></span>
+        <span id="modal-updated" class="muted small"></span>
+      </div>
+      <p id="modal-truck-info" class="truck-info"></p>
+
+      <div class="status-buttons">
+        <button class="status-btn" data-status="pendiente" type="button">Reiniciar (Pendiente)</button>
+        <button class="status-btn" data-status="carga_en_piso" type="button">Carga en Piso</button>
+        <button class="status-btn" data-status="cargado" type="button">Cargado</button>
+        <button class="status-btn danger" data-status="no_cargado" type="button">No Cargado</button>
+      </div>
+
+      <label for="modal-comment">Comentario (obligatorio si es "No Cargado")</label>
+      <textarea id="modal-comment" rows="3" placeholder="¿Qué pasó con este camión?"></textarea>
+
+      <div id="assign-section" class="assign-section">
+        <hr>
+        <label for="truck-search">Asignar / cambiar camión (buscar por placa, HOD o SV)</label>
+        <input type="text" id="truck-search" placeholder="Ej. C82370, DS000H, 392...">
+        <div id="truck-results" class="truck-results"></div>
+        <button id="modal-unassign" class="btn-link" type="button">Quitar camión asignado</button>
+
+        <hr>
+        <label>Editar datos del camión de este Spot</label>
+        <div class="edit-truck-form">
+          <input type="text" id="edit-hod" placeholder="HOD">
+          <input type="text" id="edit-placa" placeholder="Placa (obligatorio)">
+          <input type="text" id="edit-sv" placeholder="SV">
+          <button id="edit-truck-save" class="btn-primary" type="button">Guardar cambios</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  window.APP = { role: {{ user.role|tojson }}, today: {{ today|tojson }} };
+</script>
+<script src="/static/js/board.js?v={{ asset_version }}"></script>
+</body>
+</html>

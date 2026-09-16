@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reportes - DC Map</title>
+<link rel="stylesheet" href="/static/css/styles.css?v={{ asset_version }}">
+</head>
+<body class="admin-body">
+<header class="topbar">
+  <div class="topbar-left"><h1>Administración</h1></div>
+  <div class="topbar-right">
+    <span class="user-badge">{{ user.full_name }} · {{ 'Super Admin' if user.role == 'super_admin' else 'Admin' }}</span>
+    <a href="/" class="btn-link">&larr; Tablero</a>
+    <form method="post" action="/logout" class="inline"><button class="btn-link" type="submit">Salir</button></form>
+  </div>
+</header>
+
+<nav class="admin-tabs">
+  <a href="/admin" class="admin-tab">Usuarios y Camiones</a>
+  <a href="/admin/dashboard" class="admin-tab">Dashboard</a>
+  <a href="/admin/bitacora" class="admin-tab">Bitácora</a>
+  <a href="/admin/reportes" class="admin-tab active">Reportes</a>
+</nav>
+
+<main class="admin-main">
+  <section class="admin-section">
+    <h2>Rango de fechas</h2>
+    <form method="get" action="/admin/reportes" class="filter-row" id="rango-form">
+      <label for="desde">Desde:</label>
+      <input type="date" id="desde" name="desde" value="{{ desde }}">
+      <label for="hasta">Hasta:</label>
+      <input type="date" id="hasta" name="hasta" value="{{ hasta }}">
+      <button type="submit" class="btn-primary-sm">Actualizar rango</button>
+    </form>
+  </section>
+
+  <section class="admin-section">
+    <h2>Bitácora del rango</h2>
+    <p class="muted">Cada cambio de estatus, asignación, edición y movimiento de layout registrado entre las dos fechas.</p>
+    <a class="btn-primary-sm" href="/admin/reportes/bitacora.csv?desde={{ desde }}&hasta={{ hasta }}">⬇ Descargar CSV</a>
+  </section>
+
+  <section class="admin-section">
+    <h2>Resumen diario del rango</h2>
+    <p class="muted">Una fila por día: total de Spots y cuántos quedaron en cada estatus.</p>
+    <a class="btn-primary-sm" href="/admin/reportes/resumen.csv?desde={{ desde }}&hasta={{ hasta }}">⬇ Descargar CSV</a>
+  </section>
+</main>
+</body>
+</html>
