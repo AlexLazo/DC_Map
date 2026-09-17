@@ -276,6 +276,20 @@ if (spotSearchInput) {
   });
 }
 
+// En pantalla angosta (tablet/celular) los filtros/editar/zoom se esconden
+// detrás de este botón para no comerse la pantalla -- el buscador (fuera de
+// .toolbar-extra) nunca se esconde. En pantalla ancha el CSS ya deja
+// .toolbar-extra siempre visible (`display:contents`), así que este botón
+// ni se muestra ahí -- este listener es inofensivo en ese caso.
+const toolbarToggle = document.getElementById('toolbar-toggle');
+const toolbarExtra = document.getElementById('toolbar-extra');
+if (toolbarToggle) {
+  toolbarToggle.addEventListener('click', () => {
+    const expanded = toolbarExtra.classList.toggle('expanded');
+    toolbarToggle.classList.toggle('active', expanded);
+  });
+}
+
 function tileTooltip(spot) {
   let t = `${displayCode(spot)} · ${STATUS_LABELS[spot.status]}`;
   if (spot.supervisor_name) t += ` · ${spot.supervisor_name}`;

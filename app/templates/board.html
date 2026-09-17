@@ -37,32 +37,35 @@
     <input type="text" id="spot-search" placeholder="🔍 Buscar por SV, ruta o placa..." autocomplete="off">
     <button id="spot-search-clear" type="button" style="display:none" title="Limpiar búsqueda">×</button>
   </div>
-  <div class="status-filter" id="status-filter">
-    <button class="filter-btn active" data-filter="todos" type="button">Todos</button>
-    <button class="filter-btn" data-filter="pendiente" type="button">Pendiente</button>
-    <button class="filter-btn" data-filter="carga_en_piso" type="button">Carga en Piso</button>
-    <button class="filter-btn" data-filter="cargado" type="button">Cargado</button>
-    <button class="filter-btn" data-filter="no_cargado" type="button">No Cargado</button>
-  </div>
-  {% if user.role in ('admin', 'super_admin') %}
-  <div class="edit-mode-toggle">
-    <button id="edit-mode-btn" class="edit-btn" type="button">✏️ Editar Layout</button>
-    <button id="new-label-btn" class="edit-btn" type="button" style="display:none">🏷️ Nueva Etiqueta</button>
-    <button id="sync-excel-btn" class="edit-btn" type="button" title="El Excel se revisa solo cada 20s; usa esto para no esperar">🔄 Sincronizar Excel</button>
-    <span id="edit-mode-hint" class="muted small" style="display:none">
-      Arrastra para mover (Ctrl/Shift+clic = varios a la vez) · clic en espacio vacío = crear Spot (o etiqueta, con "Nueva Etiqueta" activo) · flechas mueve · Shift+flechas redimensiona · Supr elimina · doble clic en etiqueta = renombrar · Ctrl+C/Ctrl+V copia y pega · Ctrl+Z deshace · Esc suelta
-    </span>
-  </div>
-  {% endif %}
-  <div class="zoom-controls">
-    <button id="zoom-out" type="button">−</button>
-    <button id="zoom-in" type="button">+</button>
+  <button id="toolbar-toggle" class="toolbar-toggle-btn" type="button" title="Mostrar/ocultar filtros">☰ Filtros</button>
+  <div class="toolbar-extra" id="toolbar-extra">
+    <div class="status-filter" id="status-filter">
+      <button class="filter-btn active" data-filter="todos" type="button">Todos</button>
+      <button class="filter-btn" data-filter="pendiente" type="button">Pendiente</button>
+      <button class="filter-btn" data-filter="carga_en_piso" type="button">Carga en Piso</button>
+      <button class="filter-btn" data-filter="cargado" type="button">Cargado</button>
+      <button class="filter-btn" data-filter="no_cargado" type="button">No Cargado</button>
+    </div>
+    {% if user.role in ('admin', 'super_admin') %}
+    <div class="edit-mode-toggle">
+      <button id="edit-mode-btn" class="edit-btn" type="button">✏️ Editar Layout</button>
+      <button id="new-label-btn" class="edit-btn" type="button" style="display:none">🏷️ Nueva Etiqueta</button>
+      <button id="sync-excel-btn" class="edit-btn" type="button" title="El Excel se revisa solo cada 20s; usa esto para no esperar">🔄 Sincronizar Excel</button>
+      <span id="edit-mode-hint" class="muted small" style="display:none">
+        Arrastra para mover (Ctrl/Shift+clic = varios a la vez) · clic en espacio vacío = crear Spot (o etiqueta, con "Nueva Etiqueta" activo) · flechas mueve · Shift+flechas redimensiona · Supr elimina · doble clic en etiqueta = renombrar · Ctrl+C/Ctrl+V copia y pega · Ctrl+Z deshace · Esc suelta
+      </span>
+    </div>
+    {% endif %}
   </div>
 </div>
 
 <div class="map-wrapper">
   <div class="map-scroll">
     <div class="map" id="map"></div>
+  </div>
+  <div class="zoom-controls">
+    <button id="zoom-out" type="button">−</button>
+    <button id="zoom-in" type="button">+</button>
   </div>
 </div>
 

@@ -161,14 +161,53 @@ body {
 .filter-btn:hover, .edit-btn:hover { background: #e5e7eb; }
 .filter-btn.active { background: var(--primary); color: white; border-color: var(--primary); }
 
+/* En pantalla ancha esto no debe cambiar nada -- `display:contents` hace que
+   .toolbar-extra "desaparezca" como caja y sus hijos (filtros/editar/zoom)
+   sigan siendo items directos de .toolbar, igual que antes de envolverlos.
+   El botón de colapsar solo se muestra en pantallas angostas (ver media
+   query abajo): en tablet/celular esos controles ocupan mucho espacio de
+   pantalla y tapan el mapa, pero el buscador (fuera de .toolbar-extra) debe
+   quedar siempre visible -- pedido explícito para no perder tiempo. */
+.toolbar-toggle-btn {
+  display: none;
+  padding: 0.35rem 0.75rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: #f3f4f6;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.toolbar-toggle-btn:hover { background: #e5e7eb; }
+.toolbar-toggle-btn.active { background: var(--primary); color: white; border-color: var(--primary); }
+.toolbar-extra { display: contents; }
+
+@media (max-width: 640px) {
+  .toolbar-toggle-btn { display: inline-flex; align-items: center; }
+  .toolbar-extra { display: none; width: 100%; }
+  .toolbar-extra.expanded {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.6rem;
+    width: 100%;
+    padding-top: 0.5rem;
+  }
+}
+
 .spot-search-box {
   position: relative;
   display: flex;
   align-items: center;
+  flex: 1 1 160px;
+  min-width: 0;
+  max-width: 260px;
 }
 .spot-search-box input {
-  width: 220px;
-  max-width: 100%;
+  width: 100%;
+  min-width: 0;
   padding: 0.45rem 2rem 0.45rem 0.8rem;
   border-radius: 999px;
   border: 1px solid var(--border);
@@ -197,16 +236,27 @@ body {
 .edit-mode-toggle { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
 #edit-mode-btn.active, #new-label-btn.active { background: #7c3aed; color: white; border-color: #7c3aed; }
 
-.zoom-controls { display: flex; gap: 0.3rem; }
+/* Flota sobre el mapa (esquina inferior derecha) en vez de vivir en la
+   barra de arriba -- así queda siempre alcanzable sin abrir "Filtros" en
+   pantallas angostas, y no compite por espacio con el buscador. */
+.zoom-controls {
+  position: absolute;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 8;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
 .zoom-controls button {
-  width: 30px;
-  height: 30px;
-  border-radius: 6px;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
   border: 1px solid var(--border);
   background: white;
-  font-size: 1.1rem;
+  font-size: 1.3rem;
   cursor: pointer;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.2);
 }
 
 /* Map */
