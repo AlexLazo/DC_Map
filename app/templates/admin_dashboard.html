@@ -11,6 +11,7 @@
   <div class="topbar-left"><h1>Administración</h1></div>
   <div class="topbar-right">
     <span class="user-badge">{{ user.full_name }} · {{ 'Super Admin' if user.role == 'super_admin' else 'Admin' }}</span>
+    <a href="/cambiar-clave" class="btn-link" title="Cambiar mi contraseña">🔑 Contraseña</a>
     <a href="/" class="btn-link">&larr; Tablero</a>
     <form method="post" action="/logout" class="inline"><button class="btn-link" type="submit">Salir</button></form>
   </div>
@@ -29,6 +30,7 @@
     <form method="get" action="/admin/dashboard" class="filter-row">
       <label for="fecha">Fecha:</label>
       <input type="date" id="fecha" name="fecha" value="{{ fecha }}" onchange="this.form.submit()">
+      <span class="muted small">{{ shift_label }}</span>
     </form>
   </section>
 
@@ -46,6 +48,10 @@
       <div class="kpi-card {{ 'no_cargado' if resumen.incidencias else 'cargado' }}">
         <div class="kpi-value">{{ resumen.incidencias }}</div>
         <div class="kpi-label">Incidencia(s) sin resolver</div>
+      </div>
+      <div class="kpi-card {{ 'cargado' if resumen.faltan == 0 else 'pendiente' }}">
+        <div class="kpi-value">{{ resumen.faltan }}</div>
+        <div class="kpi-label">Faltan por cargar (pendientes + en piso)</div>
       </div>
     </div>
   </section>
@@ -168,11 +174,11 @@
 
   <section class="admin-section">
     <h2>Horas productivas (últimos 7 días)</h2>
-    <p class="muted small">Camiones marcados "Cargado" por hora del día (hora local). La franja sombreada es la ventana real de turno (10PM–9AM).</p>
+    <p class="muted small">Camiones marcados "Cargado" por hora del día (hora local). La franja sombreada es el horario de turno ({{ shift_window }}).</p>
     <div class="hour-chart-wrap">
       <div class="hour-chart">
         {% for count in hourly_profile %}
-        <div class="hour-col {{ 'shift' if loop.index0 >= 22 or loop.index0 < 9 else '' }}">
+        <div class="hour-col {{ 'shift' if loop.index0 >= shift_start_hour or loop.index0 < shift_end_hour else '' }}">
           <div class="hour-bar" title="{{ '%02d:00'|format(loop.index0) }} — {{ count }} camión(es)">
             <div class="hour-bar-fill" style="height: {{ (100 * count / hourly_max)|round(1) }}%"></div>
           </div>
@@ -183,5 +189,8 @@
     </div>
   </section>
 </main>
+<script src="/static/js/keepawake.js?v={{ asset_version }}"></script>
+<script src="/static/js/clock.js?v={{ asset_version }}"></script>
+<script src="/static/js/dashboard_live.js?v={{ asset_version }}"></script>
 </body>
 </html>

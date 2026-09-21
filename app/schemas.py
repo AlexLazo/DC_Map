@@ -4,6 +4,9 @@ from pydantic import BaseModel
 class StatusUpdateIn(BaseModel):
     status: str
     comentario: str | None = None
+    # Solo lo manda el envío diferido de un cambio marcado sin señal: la hora
+    # (ISO-8601, UTC) en que la persona lo marcó de verdad.
+    client_ts: str | None = None
 
 
 class AssignTruckIn(BaseModel):

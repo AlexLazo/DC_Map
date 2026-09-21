@@ -11,6 +11,7 @@
   <div class="topbar-left"><h1>Administración</h1></div>
   <div class="topbar-right">
     <span class="user-badge">{{ user.full_name }} · {{ 'Super Admin' if user.role == 'super_admin' else 'Admin' }}</span>
+    <a href="/cambiar-clave" class="btn-link" title="Cambiar mi contraseña">🔑 Contraseña</a>
     <a href="/" class="btn-link">&larr; Tablero</a>
     <form method="post" action="/logout" class="inline"><button class="btn-link" type="submit">Salir</button></form>
   </div>
@@ -40,10 +41,299 @@
     <a class="btn-primary-sm" href="/admin/config/backup.json">⬇ Descargar respaldo completo (JSON)</a>
   </section>
 
+  {% if reset_done %}
+  <section class="admin-section">
+    <p class="reset-ok">✔ Registros reiniciados: se borraron {{ reset_done[0] }} estatus diario(s) y {{ reset_done[1] }} evento(s) de bitácora. Usuarios, camiones y layout siguen intactos.</p>
+  </section>
+  {% endif %}
+
+  {% if user.role == 'super_admin' %}
+  <section class="admin-section danger-zone">
+    <h2>Reiniciar registros</h2>
+    <p class="muted small">Borra el <b>historial operativo</b> (estatus diarios y bitácora) para empezar limpio, por ejemplo después de pruebas controladas. <b>No</b> borra usuarios, camiones, Spots ni el layout del mapa. Antes de borrar se descarga automáticamente un respaldo completo, y el reinicio queda registrado como el primer evento de la bitácora nueva.</p>
+    <form method="post" action="/admin/config/reset" id="reset-form" class="reset-form">
+      <label class="reset-option"><input type="radio" name="scope" value="all" checked> Todo el historial{% if fecha_min %} <span class="muted small">(hay registros del {{ fecha_min }} al {{ fecha_max }})</span>{% endif %}</label>
+      <label class="reset-option"><input type="radio" name="scope" value="range"> Solo un rango de días operativos</label>
+      <div class="filter-row reset-range">
+        <label for="reset-desde">Desde:</label>
+        <input type="date" id="reset-desde" name="desde" value="{{ fecha_min }}">
+        <label for="reset-hasta">Hasta:</label>
+        <input type="date" id="reset-hasta" name="hasta" value="{{ fecha_max }}">
+      </div>
+      <p id="reset-preview" class="reset-preview">Calculando…</p>
+      <label for="reset-confirm" class="reset-confirm-label">Para confirmar, escribe <b>{{ confirm_word }}</b>:</label>
+      <div class="reset-actions">
+        <input type="text" id="reset-confirm" name="confirm" autocomplete="off" placeholder="{{ confirm_word }}">
+        <button type="button" id="reset-btn" class="btn-danger-sm" disabled>🗑 Descargar respaldo y reiniciar</button>
+      </div>
+      <p id="reset-status" class="muted small"></p>
+    </form>
+  </section>
+  {% else %}
+  <section class="admin-section">
+    <h2>Reiniciar registros</h2>
+    <p class="muted small">Solo un Super Admin puede reiniciar los registros (estatus diarios y bitácora).</p>
+  </section>
+  {% endif %}
+
+  {% if restored %}
+  <section class="admin-section">
+    <p class="reset-ok">✔ Historial restaurado: {{ restored[0] }} estatus diario(s) y {{ restored[1] }} evento(s) de bitácora{% if restored[2] %} ({{ restored[2] }} estatus omitido(s) porque su Spot ya no existe){% endif %}.</p>
+  </section>
+  {% endif %}
+
+  {% if user.role == 'super_admin' %}
+  <section class="admin-section danger-zone">
+    <h2>Restaurar desde respaldo</h2>
+    <p class="muted small">Carga un archivo generado con «Descargar respaldo completo». Sirve, por ejemplo, para <b>deshacer un reinicio de registros</b> o para recuperar todo si se perdió la base de datos. El archivo se revisa completo antes de tocar nada, y todo se aplica de una sola vez (o no se aplica).</p>
+    <form method="post" action="/admin/config/restore" id="restore-form" class="reset-form" enctype="multipart/form-data">
+      <input type="file" id="restore-file" name="file" accept=".json,application/json">
+      <p id="restore-preview" class="reset-preview">Elige un archivo de respaldo (.json).</p>
+      <div id="restore-options" style="display:none">
+        <label class="reset-option"><input type="radio" name="mode" value="history" checked> Solo el historial <span class="muted small">(estatus diarios y bitácora; no toca usuarios ni el layout)</span></label>
+        <label class="reset-option"><input type="radio" name="mode" value="full"> Todo <span class="muted small">(usuarios, camiones, Spots, etiquetas e historial)</span></label>
+        <p id="restore-mode-note" class="reset-preview"></p>
+      </div>
+      <label for="restore-confirm" class="reset-confirm-label">Para confirmar, escribe <b>{{ restore_word }}</b>:</label>
+      <div class="reset-actions">
+        <input type="text" id="restore-confirm" name="confirm" autocomplete="off" placeholder="{{ restore_word }}">
+        <button type="button" id="restore-btn" class="btn-danger-sm" disabled>♻ Descargar respaldo actual y restaurar</button>
+      </div>
+      <p id="restore-status" class="muted small"></p>
+    </form>
+  </section>
+  {% else %}
+  <section class="admin-section">
+    <h2>Restaurar desde respaldo</h2>
+    <p class="muted small">Solo un Super Admin puede restaurar un respaldo.</p>
+  </section>
+  {% endif %}
+
   <section class="admin-section">
     <h2>Acerca de</h2>
     <p class="muted small">DC Map · CD Soyapango. El layout (Spots, camiones, etiquetas) se sincroniza automáticamente desde el Excel del repositorio en cada arranque/despliegue -- para actualizarlo, edita el Excel y súbelo con un commit normal.</p>
   </section>
 </main>
+<script src="/static/js/clock.js?v={{ asset_version }}"></script>
+{% if user.role == 'super_admin' %}
+<script>
+// Respaldo completo del estado ACTUAL, descargado antes de cualquier operación
+// destructiva. Si falla, quien llama NO debe continuar.
+async function downloadCurrentBackup(prefix) {
+  const res = await fetch('/admin/config/backup.json', { cache: 'no-store' });
+  if (!res.ok) throw new Error('backup');
+  const blob = await res.blob();
+  const d = new Date(), p = (n) => String(n).padStart(2, '0');
+  const stamp = `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}`;
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `dc_map_respaldo_antes_de_${prefix}_${stamp}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 15000);
+}
+
+// ---------------------------------------------------------------- Reiniciar registros
+(function () {
+  const WORD = {{ confirm_word|tojson }};
+  const form = document.getElementById('reset-form');
+  const preview = document.getElementById('reset-preview');
+  const btn = document.getElementById('reset-btn');
+  const statusEl = document.getElementById('reset-status');
+  const confirmInput = document.getElementById('reset-confirm');
+  const desde = document.getElementById('reset-desde');
+  const hasta = document.getElementById('reset-hasta');
+  const rangeRow = form.querySelector('.reset-range');
+  let last = null; // última vista previa válida (con datos que borrar)
+  let previewSeq = 0; // descarta respuestas viejas si se cambia el alcance/fechas rápido
+
+  const scope = () => form.querySelector('input[name=scope]:checked').value;
+
+  function updateButton() {
+    btn.disabled = !(last && confirmInput.value.trim().toUpperCase() === WORD);
+  }
+
+  async function refreshPreview() {
+    const seq = ++previewSeq;
+    rangeRow.classList.toggle('disabled', scope() !== 'range');
+    last = null;
+    updateButton();
+    if (scope() === 'range' && (!desde.value || !hasta.value || desde.value > hasta.value)) {
+      preview.className = 'reset-preview';
+      preview.textContent = 'Elige un rango de fechas válido.';
+      return;
+    }
+    const q = new URLSearchParams({ scope: scope(), desde: desde.value, hasta: hasta.value });
+    try {
+      const res = await fetch('/admin/config/reset-preview?' + q, { cache: 'no-store' });
+      if (!res.ok) throw new Error('preview');
+      const data = await res.json();
+      if (seq !== previewSeq) return; // llegó tarde: ya hay una consulta más nueva
+      const empty = !data.daily_status && !data.activity_log;
+      preview.className = 'reset-preview' + (empty ? '' : ' has-data');
+      preview.innerHTML = empty
+        ? 'No hay registros en ese alcance; no se borraría nada.'
+        : `Se borrarán <b>${data.daily_status}</b> estatus diario(s) y <b>${data.activity_log}</b> evento(s) de bitácora (${data.label}).` +
+          (data.warn_live ? '<br><b>⚠ Hay un turno en curso: también se borrará lo que los conductores ya marcaron hoy.</b>' : '');
+      last = empty ? null : data;
+    } catch (err) {
+      if (seq !== previewSeq) return;
+      preview.className = 'reset-preview';
+      preview.textContent = 'No se pudo calcular la vista previa. Recarga la página.';
+    }
+    updateButton();
+  }
+
+  btn.addEventListener('click', async () => {
+    if (!last) return;
+    const msg =
+      `Se borrarán ${last.daily_status} estatus diarios y ${last.activity_log} eventos de bitácora (${last.label}).\n\n` +
+      'Esto NO se puede deshacer (por eso se descargará un respaldo primero).\n\n¿Continuar?';
+    if (!window.confirm(msg)) return;
+    btn.disabled = true;
+    statusEl.textContent = 'Descargando respaldo…';
+    try {
+      await downloadCurrentBackup('reiniciar'); // 1) respaldo ANTES de borrar; si falla, no se borra nada
+    } catch (err) {
+      statusEl.textContent = '';
+      alert('No se pudo descargar el respaldo, así que NO se borró nada. Intenta de nuevo.');
+      updateButton();
+      return;
+    }
+    statusEl.textContent = 'Reiniciando…'; // 2) recién con el respaldo en mano se manda el borrado
+    form.submit();
+  });
+
+  form.querySelectorAll('input[name=scope]').forEach((r) => r.addEventListener('change', refreshPreview));
+  desde.addEventListener('change', refreshPreview);
+  hasta.addEventListener('change', refreshPreview);
+  confirmInput.addEventListener('input', updateButton);
+  // Enter dentro del campo de texto no debe saltarse el respaldo ni el diálogo.
+  form.addEventListener('submit', (e) => {
+    if (!e.submitter) e.preventDefault();
+  });
+  refreshPreview();
+})();
+
+// ---------------------------------------------------------------- Restaurar desde respaldo
+(function () {
+  const WORD = {{ restore_word|tojson }};
+  const form = document.getElementById('restore-form');
+  const fileInput = document.getElementById('restore-file');
+  const preview = document.getElementById('restore-preview');
+  const options = document.getElementById('restore-options');
+  const modeNote = document.getElementById('restore-mode-note');
+  const btn = document.getElementById('restore-btn');
+  const statusEl = document.getElementById('restore-status');
+  const confirmInput = document.getElementById('restore-confirm');
+  let info = null; // vista previa del archivo elegido (null = no válido)
+  let seq = 0;
+
+  const mode = () => form.querySelector('input[name=mode]:checked').value;
+  const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+
+  function fmtDate(iso) {
+    if (!iso) return 'fecha desconocida';
+    const d = new Date(iso);
+    return isNaN(d) ? esc(iso) : d.toLocaleString('es-SV');
+  }
+
+  function updateMode() {
+    if (!info) return;
+    if (mode() === 'full') {
+      modeNote.className = 'reset-preview has-data';
+      modeNote.innerHTML = info.full_error
+        ? `<b>No se puede restaurar todo:</b> ${esc(info.full_error)}.`
+        : `Se REEMPLAZARÁ todo: ${info.counts.users} usuario(s), ${info.counts.trucks} camión(es), ${info.counts.spots} Spot(s), ${info.counts.labels} etiqueta(s), ` +
+          `${info.counts.daily_status} estatus diario(s) y ${info.counts.activity_log} evento(s). <b>Se cerrarán todas las sesiones</b> y tendrás que volver a ingresar.`;
+    } else {
+      const h = info.history, n = h.notes, extra = [];
+      if (n.daily_skipped) extra.push(`${n.daily_skipped} estatus se omitirán porque su Spot ya no existe`);
+      if (n.daily_user_unlinked + n.log_user_unlinked) extra.push('algunos registros perderán el nombre de quien los hizo (ese usuario ya no existe)');
+      if (n.log_spot_unlinked) extra.push(`${n.log_spot_unlinked} evento(s) perderán su Spot`);
+      modeNote.className = 'reset-preview has-data';
+      modeNote.innerHTML =
+        `Se REEMPLAZARÁ el historial actual (${info.current.daily_status} estatus y ${info.current.activity_log} eventos) por el del respaldo (${h.daily_status} estatus y ${h.activity_log} eventos).` +
+        (extra.length ? `<br>Ojo: ${extra.join('; ')}.` : '');
+    }
+    updateButton();
+  }
+
+  function updateButton() {
+    const ok = info && !(mode() === 'full' && info.full_error) && confirmInput.value.trim().toUpperCase() === WORD;
+    btn.disabled = !ok;
+  }
+
+  fileInput.addEventListener('change', async () => {
+    const mySeq = ++seq;
+    info = null;
+    options.style.display = 'none';
+    updateButton();
+    const file = fileInput.files[0];
+    if (!file) {
+      preview.className = 'reset-preview';
+      preview.textContent = 'Elige un archivo de respaldo (.json).';
+      return;
+    }
+    preview.className = 'reset-preview';
+    preview.textContent = 'Revisando el archivo…';
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await fetch('/admin/config/restore-preview', { method: 'POST', body: fd });
+      const data = await res.json().catch(() => ({}));
+      if (mySeq !== seq) return;
+      if (!res.ok) {
+        preview.className = 'reset-preview has-data';
+        preview.innerHTML = `<b>Archivo no válido:</b> ${esc(data.detail || 'no se pudo leer')}`;
+        return;
+      }
+      info = data;
+      const c = data.counts;
+      preview.className = 'reset-preview';
+      preview.innerHTML =
+        `✔ Respaldo generado el <b>${fmtDate(data.generated_at)}</b>: ${c.users} usuario(s), ${c.trucks} camión(es), ${c.spots} Spot(s), ${c.labels} etiqueta(s), ` +
+        `${c.daily_status} estatus diario(s) y ${c.activity_log} evento(s) de bitácora` +
+        (data.fecha_min ? ` (del ${data.fecha_min} al ${data.fecha_max})` : '') + '.';
+      options.style.display = '';
+      updateMode();
+    } catch (err) {
+      if (mySeq !== seq) return;
+      preview.className = 'reset-preview has-data';
+      preview.textContent = 'No se pudo revisar el archivo. Intenta de nuevo.';
+    }
+  });
+
+  form.querySelectorAll('input[name=mode]').forEach((r) => r.addEventListener('change', updateMode));
+  confirmInput.addEventListener('input', updateButton);
+
+  btn.addEventListener('click', async () => {
+    if (!info) return;
+    const what =
+      mode() === 'full'
+        ? 'REEMPLAZAR TODO (usuarios, camiones, layout e historial) y cerrar todas las sesiones'
+        : 'REEMPLAZAR el historial actual (estatus diarios y bitácora)';
+    if (!window.confirm(`Vas a ${what} con el contenido del respaldo.\n\nEsto NO se puede deshacer (por eso se descargará un respaldo del estado actual primero).\n\n¿Continuar?`)) return;
+    btn.disabled = true;
+    statusEl.textContent = 'Descargando respaldo del estado actual…';
+    try {
+      await downloadCurrentBackup('restaurar'); // 1) respaldo ANTES de reemplazar; si falla, no se toca nada
+    } catch (err) {
+      statusEl.textContent = '';
+      alert('No se pudo descargar el respaldo del estado actual, así que NO se restauró nada. Intenta de nuevo.');
+      updateButton();
+      return;
+    }
+    statusEl.textContent = 'Restaurando…'; // 2) recién con el respaldo actual a salvo
+    form.submit();
+  });
+
+  form.addEventListener('submit', (e) => {
+    if (!e.submitter) e.preventDefault();
+  });
+})();
+</script>
+{% endif %}
 </body>
 </html>

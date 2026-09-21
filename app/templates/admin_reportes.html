@@ -11,6 +11,7 @@
   <div class="topbar-left"><h1>Administración</h1></div>
   <div class="topbar-right">
     <span class="user-badge">{{ user.full_name }} · {{ 'Super Admin' if user.role == 'super_admin' else 'Admin' }}</span>
+    <a href="/cambiar-clave" class="btn-link" title="Cambiar mi contraseña">🔑 Contraseña</a>
     <a href="/" class="btn-link">&larr; Tablero</a>
     <form method="post" action="/logout" class="inline"><button class="btn-link" type="submit">Salir</button></form>
   </div>
@@ -27,26 +28,71 @@
 <main class="admin-main">
   <section class="admin-section">
     <h2>Rango de fechas</h2>
-    <form method="get" action="/admin/reportes" class="filter-row" id="rango-form">
+    <p class="muted small">Cada fecha es un <b>día operativo</b>: el turno que <b>termina</b> ese día. Lo que se carga de {{ start_label }} del día anterior a {{ end_label }} de la fecha cuenta como la carga de esa fecha (ej.: de 10 PM del 18 a 10 AM del 19 = carga del <b>19</b>). Rango máximo: {{ max_days }} días.</p>
+    <form method="get" class="filter-row" id="rango-form">
       <label for="desde">Desde:</label>
-      <input type="date" id="desde" name="desde" value="{{ desde }}">
+      <input type="date" id="desde" name="desde" value="{{ desde }}" required>
       <label for="hasta">Hasta:</label>
-      <input type="date" id="hasta" name="hasta" value="{{ hasta }}">
-      <button type="submit" class="btn-primary-sm">Actualizar rango</button>
+      <input type="date" id="hasta" name="hasta" value="{{ hasta }}" required>
+      <button type="button" class="btn-link" data-days="0">Hoy</button>
+      <button type="button" class="btn-link" data-days="1">Ayer</button>
+      <button type="button" class="btn-link" data-days="7">Últimos 7 días</button>
+      <button type="button" class="btn-link" data-days="30">Últimos 30 días</button>
     </form>
+    <p class="muted small" id="rango-msg" style="color: var(--danger); min-height: 1em;"></p>
   </section>
 
   <section class="admin-section">
-    <h2>Bitácora del rango</h2>
-    <p class="muted">Cada cambio de estatus, asignación, edición y movimiento de layout registrado entre las dos fechas.</p>
-    <a class="btn-primary-sm" href="/admin/reportes/bitacora.csv?desde={{ desde }}&hasta={{ hasta }}">⬇ Descargar CSV</a>
+    <h2>Camiones por día (Excel)</h2>
+    <p class="muted">Un renglón por camión por cada día operativo: estatus, a qué hora entró a carga en piso, <b>hora exacta de carga</b>, el <b>motivo</b> si no se pudo cargar (o el retraso que tuvo antes de cargarse) y el historial completo de lo que pasó ese día. Trae una segunda hoja con el resumen de cada día. Solo aparecen los días con actividad registrada.</p>
+    <button type="submit" form="rango-form" formaction="/admin/reportes/camiones.xlsx" class="btn-primary-sm js-download">⬇ Descargar Excel</button>
   </section>
 
   <section class="admin-section">
-    <h2>Resumen diario del rango</h2>
-    <p class="muted">Una fila por día: total de Spots y cuántos quedaron en cada estatus.</p>
-    <a class="btn-primary-sm" href="/admin/reportes/resumen.csv?desde={{ desde }}&hasta={{ hasta }}">⬇ Descargar CSV</a>
+    <h2>Bitácora de eventos (Excel)</h2>
+    <p class="muted">Cada cambio de estatus, asignación, edición y movimiento de layout registrado en el rango, con fecha y hora exactas y quién lo hizo.</p>
+    <button type="submit" form="rango-form" formaction="/admin/reportes/bitacora.xlsx" class="btn-primary-sm js-download">⬇ Descargar Excel</button>
   </section>
 </main>
+<script src="/static/js/clock.js?v={{ asset_version }}"></script>
+<script>
+(function () {
+  const HOY = '{{ hoy }}';
+  const MAX_DAYS = {{ max_days }};
+  const desde = document.getElementById('desde');
+  const hasta = document.getElementById('hasta');
+  const msg = document.getElementById('rango-msg');
+  const buttons = document.querySelectorAll('.js-download');
+
+  function iso(d) { return d.toISOString().slice(0, 10); }
+  function addDays(isoDate, n) {
+    const d = new Date(isoDate + 'T00:00:00Z');
+    d.setUTCDate(d.getUTCDate() + n);
+    return iso(d);
+  }
+
+  function validate() {
+    let err = '';
+    if (!desde.value || !hasta.value) err = 'Elige las dos fechas.';
+    else if (desde.value > hasta.value) err = '"Desde" no puede ser posterior a "Hasta".';
+    else if ((Date.parse(hasta.value) - Date.parse(desde.value)) / 86400000 >= MAX_DAYS) err = 'El rango máximo es de ' + MAX_DAYS + ' días.';
+    msg.textContent = err;
+    buttons.forEach((b) => { b.disabled = !!err; b.style.opacity = err ? '0.5' : ''; });
+  }
+
+  document.querySelectorAll('[data-days]').forEach((b) => {
+    b.addEventListener('click', () => {
+      const n = parseInt(b.dataset.days, 10);
+      if (n === 0) { desde.value = hasta.value = HOY; }
+      else if (n === 1) { desde.value = hasta.value = addDays(HOY, -1); }
+      else { desde.value = addDays(HOY, -(n - 1)); hasta.value = HOY; }
+      validate();
+    });
+  });
+  desde.addEventListener('change', validate);
+  hasta.addEventListener('change', validate);
+  validate();
+})();
+</script>
 </body>
 </html>

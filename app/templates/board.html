@@ -5,6 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>DC Map - Control de Carga</title>
 <link rel="stylesheet" href="/static/css/styles.css?v={{ asset_version }}">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#111827">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="DC Map">
+<link rel="apple-touch-icon" href="/static/icons/icon-180.png">
 </head>
 <body>
 <header class="topbar">
@@ -23,6 +29,7 @@
   <div class="topbar-right">
     <input type="date" id="date-picker" value="{{ today }}">
     <span class="user-badge">{{ user.full_name }} · {{ user.role }}</span>
+    <a href="/cambiar-clave" class="btn-link" title="Cambiar mi contraseña">🔑</a>
     {% if user.role in ('admin', 'super_admin') %}<a href="/admin" class="btn-link">Admin</a>{% endif %}
     <form method="post" action="/logout" class="inline"><button class="btn-link" type="submit">Salir</button></form>
   </div>
@@ -30,6 +37,23 @@
 
 <div id="readonly-banner" class="readonly-banner" style="display:none">
   Viendo historial (solo lectura) — vuelve a la fecha de hoy para editar.
+</div>
+
+<div id="shift-banner" class="shift-banner" style="display:none"></div>
+<div id="offline-banner" class="offline-banner" style="display:none"></div>
+
+<div id="progress-strip" class="progress-strip" style="display:none">
+  <div class="ps-faltan"><b id="ps-faltan">0</b><span id="ps-faltan-label">faltan por cargar</span></div>
+  <div class="ps-bar" title="Avance de carga">
+    <i class="ps-seg cargado" id="ps-seg-cargado"></i><i class="ps-seg carga_en_piso" id="ps-seg-piso"></i><i class="ps-seg no_cargado" id="ps-seg-nocargado"></i>
+  </div>
+  <div class="ps-detail">
+    <span>✓ <b id="ps-cargado">0</b><i class="w"> cargados</i></span>
+    <span>⏳ <b id="ps-piso">0</b><i class="w"> en piso</i></span>
+    <span>✕ <b id="ps-nocargado">0</b><i class="w"> no cargados</i></span>
+    <span class="ps-total">de <b id="ps-total">0</b> camiones</span>
+  </div>
+  <div class="ps-time" id="ps-time"></div>
 </div>
 
 <div class="toolbar">
@@ -82,6 +106,8 @@
       </div>
       <p id="modal-truck-info" class="truck-info"></p>
 
+      <p id="modal-lock-note" class="lock-note" style="display:none"></p>
+
       <div class="status-buttons">
         <button class="status-btn" data-status="pendiente" type="button">Reiniciar (Pendiente)</button>
         <button class="status-btn" data-status="carga_en_piso" type="button">Carga en Piso</button>
@@ -113,8 +139,12 @@
 </div>
 
 <script>
-  window.APP = { role: {{ user.role|tojson }}, today: {{ today|tojson }} };
+  window.APP = { role: {{ user.role|tojson }}, userId: {{ user.id }}, today: {{ today|tojson }} };
 </script>
+<script src="/static/js/offline_queue.js?v={{ asset_version }}"></script>
+<script src="/static/js/keepawake.js?v={{ asset_version }}"></script>
 <script src="/static/js/board.js?v={{ asset_version }}"></script>
+<script src="/static/js/clock.js?v={{ asset_version }}"></script>
+<script src="/static/js/pwa.js?v={{ asset_version }}"></script>
 </body>
 </html>

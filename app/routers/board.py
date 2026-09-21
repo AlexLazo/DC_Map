@@ -1,5 +1,5 @@
 import uuid
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
@@ -12,6 +12,8 @@ from app.asset_version import asset_version
 from app.auth import get_current_user, require_login, require_role
 from app.database import get_db
 from app.excel_sync import sync_truck_data
+from app.local_time import operational_date, operational_today, to_local
+from app.shift import require_operating_hours, shift_info
 from app.truck_format import format_sv_code
 from app.truck_resolution import resolve_truck
 from app.ws_manager import manager
@@ -36,7 +38,7 @@ async def board_page(request: Request, db: Session = Depends(get_db)):
     if not user:
         return RedirectResponse("/login", status_code=302)
     return templates.TemplateResponse(
-        request, "board.html", {"user": user, "today": date.today().isoformat(), "asset_version": asset_version()}
+        request, "board.html", {"user": user, "today": operational_today().isoformat(), "asset_version": asset_version()}
     )
 
 
@@ -91,7 +93,7 @@ def _spot_json(spot: models.Spot, status: models.DailyStatus | None, row_offset:
         "status": status.status if status else "pendiente",
         "comentario": status.comentario if status else None,
         "updated_by": status.updated_by.full_name if status and status.updated_by else None,
-        "updated_at": status.updated_at.isoformat() if status else None,
+        "updated_at": status.updated_at.isoformat() + "Z" if status else None,
     }
 
 
@@ -101,7 +103,7 @@ async def board_data(request: Request, fecha: str | None = None, db: Session = D
     if not user:
         raise HTTPException(401, "No autenticado")
 
-    target_date = date.fromisoformat(fecha) if fecha else date.today()
+    target_date = date.fromisoformat(fecha) if fecha else operational_today()
 
     spots = db.query(models.Spot).options(joinedload(models.Spot.truck)).all()
     labels = db.query(models.MapLabel).all()
@@ -160,7 +162,9 @@ async def board_data(request: Request, fecha: str | None = None, db: Session = D
 
     return {
         "fecha": target_date.isoformat(),
-        "is_today": target_date == date.today(),
+        "is_today": target_date == operational_today(),
+        "today": operational_today().isoformat(),
+        "shift": shift_info(user.role),
         "spots": [_spot_json(s, statuses.get(s.id), row_offset, col_offset) for s in spots],
         "row_sizes": row_line_sizes,
         "col_sizes": col_line_sizes,
@@ -174,6 +178,41 @@ async def board_data(request: Request, fecha: str | None = None, db: Session = D
     }
 
 
+# Un cambio marcado sin señal se puede enviar después, con la hora en que se
+# marcó (`client_ts`). Límites para que esa hora no sea una puerta trasera: no
+# se acepta nada de hace más de 3 h, y una hora "del futuro" (reloj adelantado)
+# se recorta a ahora.
+MAX_OFFLINE_AGE = timedelta(hours=3)
+
+
+def _change_time(client_ts: str | None) -> tuple[datetime, bool]:
+    """(momento UTC naive en que ocurrió el cambio, ¿es un envío diferido?)"""
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    if not client_ts:
+        return now, False
+    try:
+        ts = datetime.fromisoformat(client_ts.replace("Z", "+00:00"))
+    except ValueError:
+        raise HTTPException(400, "Hora del cambio inválida")
+    if ts.tzinfo is not None:
+        ts = ts.astimezone(timezone.utc).replace(tzinfo=None)
+    ts = min(ts, now)
+    if now - ts > MAX_OFFLINE_AGE:
+        raise HTTPException(409, "Este cambio se hizo sin conexión hace más de 3 horas y ya no se puede aplicar")
+    return ts, True
+
+
+def _status_message(spot: models.Spot, ds: models.DailyStatus | None) -> dict:
+    return {
+        "type": "status_update",
+        "spot_id": spot.id,
+        "status": ds.status if ds else "pendiente",
+        "comentario": ds.comentario if ds else None,
+        "updated_by": ds.updated_by.full_name if ds and ds.updated_by else None,
+        "updated_at": ds.updated_at.isoformat() + "Z" if ds else None,
+    }
+
+
 @router.post("/api/spots/{spot_id}/status")
 async def update_status(
     spot_id: int,
@@ -181,6 +220,8 @@ async def update_status(
     user: models.User = Depends(require_login),
     db: Session = Depends(get_db),
 ):
+    when, deferred = _change_time(payload.client_ts)
+    require_operating_hours(user, to_local(when))
     if payload.status not in VALID_STATUSES:
         raise HTTPException(400, "Estado inválido")
     if user.role == "conductor_patio" and payload.status not in CONDUCTOR_PATIO_STATUSES:
@@ -194,30 +235,46 @@ async def update_status(
     if not spot:
         raise HTTPException(404, "Spot no encontrado")
 
-    today = date.today()
-    ds = db.query(models.DailyStatus).filter_by(spot_id=spot_id, fecha=today).first()
+    op_date = operational_date(to_local(when))
+    ds = db.query(models.DailyStatus).filter_by(spot_id=spot_id, fecha=op_date).first()
     old_status = ds.status if ds else "pendiente"
+    new_comment = payload.comentario.strip() if payload.comentario else None
+
+    # Nada que cambiar (mismo estatus y comentario): un reintento que ya se había
+    # aplicado antes de perderse la respuesta, o un toque repetido. Se responde
+    # OK sin volver a escribir bitácora ni mover la hora de carga.
+    if old_status == payload.status and ((ds.comentario if ds else None) or None) == new_comment:
+        return _status_message(spot, ds)
+
+    if deferred:
+        newer = (
+            db.query(models.ActivityLog.id)
+            .filter(
+                models.ActivityLog.spot_id == spot_id,
+                models.ActivityLog.fecha == op_date,
+                models.ActivityLog.action == "status_change",
+                models.ActivityLog.timestamp > when,
+            )
+            .first()
+        )
+        if newer:
+            raise HTTPException(409, "Otra persona ya cambió este camión después de tu cambio sin conexión; no se aplicó")
+
     if not ds:
-        ds = models.DailyStatus(spot_id=spot_id, fecha=today)
+        ds = models.DailyStatus(spot_id=spot_id, fecha=op_date)
         db.add(ds)
     ds.status = payload.status
-    ds.comentario = payload.comentario.strip() if payload.comentario else None
+    ds.comentario = new_comment
     ds.updated_by_id = user.id
+    ds.updated_at = when
     detail = f"{spot.code}: {STATUS_LABELS_ES[old_status]} → {STATUS_LABELS_ES[payload.status]}"
     if ds.comentario:
         detail += f" ({ds.comentario})"
-    log_activity(db, user, "status_change", spot_id=spot.id, detail=detail)
+    log_activity(db, user, "status_change", spot_id=spot.id, detail=detail, when=when)
     db.commit()
     db.refresh(ds)
 
-    message = {
-        "type": "status_update",
-        "spot_id": spot.id,
-        "status": ds.status,
-        "comentario": ds.comentario,
-        "updated_by": user.full_name,
-        "updated_at": ds.updated_at.isoformat(),
-    }
+    message = _status_message(spot, ds)
     await manager.broadcast(message)
     return message
 
@@ -233,6 +290,7 @@ async def assign_truck(
     app/truck_resolution.py): no toca `Spot.truck_id` (el camión oficial que
     trae el Excel), sino el `DailyStatus` de hoy. Mañana, si nadie vuelve a
     reasignar, el Spot vuelve a mostrar su camión oficial."""
+    require_operating_hours(user)
     spot = db.get(models.Spot, spot_id)
     if not spot:
         raise HTTPException(404, "Spot no encontrado")
@@ -249,7 +307,7 @@ async def assign_truck(
             "sv_code": truck.sv_code,
         }
 
-    today = date.today()
+    today = operational_today()
     ds = db.query(models.DailyStatus).filter_by(spot_id=spot_id, fecha=today).first()
     if not ds:
         ds = models.DailyStatus(spot_id=spot_id, fecha=today)
@@ -279,13 +337,14 @@ async def edit_or_create_truck(
     use ese camión. Si el Spot no tiene ningún camión hoy, crea uno nuevo y
     lo dejar asignado SOLO por hoy (mismo criterio que /assign, ver
     app/truck_resolution.py) en vez de pegarlo para siempre al Spot."""
+    require_operating_hours(user)
     spot = db.get(models.Spot, spot_id)
     if not spot:
         raise HTTPException(404, "Spot no encontrado")
     if not payload.placa.strip():
         raise HTTPException(400, "La placa es obligatoria")
 
-    today = date.today()
+    today = operational_today()
     ds = db.query(models.DailyStatus).filter_by(spot_id=spot_id, fecha=today).first()
     truck = resolve_truck(spot, ds)
     is_new = truck is None

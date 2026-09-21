@@ -5,6 +5,11 @@ from app import models
 from app.database import get_db
 
 
+# Rutas que siguen funcionando mientras la cuenta tiene el cambio de contraseña
+# pendiente (si no, sería imposible salir de ese estado).
+PASSWORD_CHANGE_ALLOWED = ("/cambiar-clave", "/logout", "/api/time", "/static/", "/sw.js", "/manifest.webmanifest")
+
+
 def get_current_user(request: Request, db: Session = Depends(get_db)) -> models.User | None:
     user_id = request.session.get("user_id")
     if not user_id:
@@ -12,6 +17,14 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> models.
     user = db.get(models.User, user_id)
     if not user or not user.active:
         return None
+    path = request.url.path
+    if user.must_change_password and not path.startswith(PASSWORD_CHANGE_ALLOWED):
+        # Se hace cumplir en el servidor (no solo en la pantalla): mientras el
+        # cambio esté pendiente nada más responde. Páginas -> a la pantalla de
+        # cambio; llamadas de API/POST -> 403 con mensaje.
+        if request.method == "GET" and not path.startswith("/api/"):
+            raise HTTPException(status_code=303, headers={"Location": "/cambiar-clave"})
+        raise HTTPException(status_code=403, detail="Debes cambiar tu contraseña antes de continuar")
     return user
 
 

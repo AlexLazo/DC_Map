@@ -50,6 +50,11 @@ let lastColSizes = [];
 let justDragged = false;
 let undoStack = [];
 let suppressUndo = false;
+// Horario operativo (ver app/shift.py): fuera de turno el tablero es solo de
+// consulta para Conductores de Patio y Supervisores. El SERVIDOR es quien lo
+// hace cumplir (responde 403); esto solo evita mostrar botones que fallarían.
+let canOperate = true;
+let shiftInfo = null;
 
 const mapEl = document.getElementById('map');
 const modal = document.getElementById('modal');
@@ -65,12 +70,32 @@ async function loadBoard(fecha) {
   renderBoard(data);
 }
 
+function applyShift(shift) {
+  if (!shift) return;
+  shiftInfo = shift;
+  canOperate = shift.can_operate;
+  // La pantalla de la tablet no debe apagarse durante el turno (ver keepawake.js).
+  if (window.KeepAwake) window.KeepAwake.set(shift.open);
+  const banner = document.getElementById('shift-banner');
+  if (shift.open) {
+    banner.style.display = 'none';
+    return;
+  }
+  const horario = `${shift.start_label} a ${shift.end_label}`;
+  banner.className = 'shift-banner ' + (shift.can_operate ? 'admin' : 'locked');
+  banner.textContent = shift.can_operate
+    ? `Fuera de horario operativo (${horario}). Puedes editar por ser administrador; los conductores y supervisores están bloqueados hasta las ${shift.start_label}.`
+    : `🔒 Fuera de horario operativo (${horario}). El tablero es solo de consulta; se habilita a las ${shift.start_label}.`;
+  banner.style.display = 'block';
+}
+
 function renderBoard(data) {
   mapEl.innerHTML = '';
   spotsById = {};
   labelsById = {};
   for (const spot of data.spots) spotsById[spot.id] = spot;
   for (const label of data.labels) labelsById[label.id] = label;
+  if (data.is_today) applyPendingOverlay();
 
   // Clon literal: misma fila/columna/tamaño de bloque que en el Excel real
   // (`PARQUEOS `), solo recortando el margen totalmente vacío. Las filas/
@@ -92,6 +117,9 @@ function renderBoard(data) {
     .join('');
 
   document.getElementById('readonly-banner').style.display = data.is_today ? 'none' : 'block';
+  applyShift(data.shift);
+  updateProgress();
+  lastBoardSignature = boardSignature(data);
   applyFilter();
   highlightSearch();
   if (!hasScrolledToContent) {
@@ -104,6 +132,57 @@ function renderBoard(data) {
   for (const s of selected) {
     const el = itemElement(s);
     if (el) el.classList.add('selected');
+  }
+}
+
+// Huella barata de lo que se ve en pantalla: el refresco periódico solo
+// vuelve a dibujar el mapa entero si algo REALMENTE cambió, para no hacer
+// parpadear/re-armar 117 tiles cada 30 s sin necesidad.
+let lastBoardSignature = '';
+
+function boardSignature(data) {
+  const spots = data.spots
+    .map((s) =>
+      [
+        s.id, s.status, s.comentario || '', s.supervisor_name || '', s.color_hex || '',
+        s.truck ? `${s.truck.id}/${s.truck.placa}/${s.truck.hod_code}/${s.truck.sv_code}` : '',
+        s.grid_row, s.grid_col, s.row_span, s.col_span,
+      ].join(':')
+    )
+    .join('|');
+  const labels = data.labels.map((l) => [l.id, l.text, l.grid_row, l.grid_col, l.row_span, l.col_span].join(':')).join('|');
+  return `${data.fecha}#${data.is_today}#${spots}#${labels}`;
+}
+
+// Relee el tablero sin molestar. No corre mientras la persona está haciendo
+// algo (pestaña en segundo plano, modo edición/arrastrando, modal de un Spot
+// abierto) -- el siguiente ciclo se pone al día. También detecta que el día
+// operativo del servidor cambió (una tablet que se queda abierta toda la
+// noche cruza el cambio de día de las 10 PM sin recargar la página): si la persona
+// estaba mirando "hoy", la pasa sola al día nuevo.
+async function refreshBoardQuietly() {
+  if (document.hidden || editMode || dragState || modal.classList.contains('open')) return;
+  try {
+    const res = await fetch(`/api/board?fecha=${datePicker.value}`);
+    if (res.status === 401) {
+      window.location.href = '/login';
+      return;
+    }
+    if (!res.ok) return;
+    const data = await res.json();
+    applyShift(data.shift);
+    if (data.today && data.today !== window.APP.today) {
+      const followingLive = datePicker.value === window.APP.today;
+      window.APP.today = data.today;
+      if (followingLive) {
+        datePicker.value = data.today;
+        loadBoard(data.today);
+        return;
+      }
+    }
+    if (boardSignature(data) !== lastBoardSignature) renderBoard(data);
+  } catch (err) {
+    // Sin señal o servidor reiniciando: se reintenta solo en el siguiente ciclo.
   }
 }
 
@@ -200,6 +279,8 @@ function applyTileStyle(el, spot) {
     .join('');
   const symbol = STATUS_SYMBOLS[spot.status];
   el.innerHTML = rowsHtml + (symbol ? `<span class="status-badge" style="background:${STATUS_COLORS[spot.status]}">${symbol}</span>` : '');
+  // Cambio marcado sin conexión que aún no llega al servidor (ver offline_queue.js).
+  el.classList.toggle('pending-sync', !!(window.OfflineQueue && OfflineQueue.hasPending(spot.id, window.APP.userId)));
 }
 
 function applyFilter() {
@@ -308,6 +389,7 @@ function updateTile(spot) {
   if (!el) return;
   applyTileStyle(el, spot);
   applyFilter();
+  updateProgress();
 }
 
 function openModal(spotId) {
@@ -337,10 +419,17 @@ function openModal(spotId) {
 
   const isToday = datePicker.value === window.APP.today;
   const isAdmin = CURRENT_ROLE === 'admin' || CURRENT_ROLE === 'super_admin';
+  const lockNote = document.getElementById('modal-lock-note');
+  const locked = isToday && !canOperate;
+  lockNote.style.display = locked ? '' : 'none';
+  if (locked && shiftInfo) {
+    lockNote.textContent = `🔒 Fuera de horario operativo: solo consulta. Se habilita a las ${shiftInfo.start_label}.`;
+  }
   document.querySelectorAll('.status-btn').forEach((btn) => {
     const st = btn.dataset.status;
     const allowed =
       isToday &&
+      canOperate &&
       (isAdmin ||
         (CURRENT_ROLE === 'conductor_patio' && ['carga_en_piso', 'cargado'].includes(st)) ||
         (CURRENT_ROLE === 'supervisor' && ['no_cargado', 'pendiente'].includes(st)));
@@ -348,7 +437,7 @@ function openModal(spotId) {
   });
 
   document.getElementById('assign-section').style.display =
-    isToday && (CURRENT_ROLE === 'supervisor' || isAdmin) ? '' : 'none';
+    isToday && canOperate && (CURRENT_ROLE === 'supervisor' || isAdmin) ? '' : 'none';
 
   modal.classList.add('open');
 }
@@ -367,17 +456,177 @@ async function setStatus(status) {
       return;
     }
   }
-  const res = await fetch(`/api/spots/${currentSpotId}/status`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ status, comentario }),
-  });
+  const spotId = currentSpotId;
+  let res;
+  try {
+    res = await fetch(`/api/spots/${spotId}/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status, comentario }),
+    });
+  } catch (err) {
+    // Sin conexión: se guarda con la hora en que se marcó y se envía solo al volver la señal.
+    queueStatus(spotId, status, comentario);
+    closeModal();
+    return;
+  }
+  if (GATEWAY_ERRORS.includes(res.status)) {
+    // El servidor está reiniciando (p. ej. un despliegue): mismo trato que sin conexión.
+    queueStatus(spotId, status, comentario);
+    closeModal();
+    return;
+  }
   if (!res.ok) {
-    const err = await res.json();
+    const err = await res.json().catch(() => ({}));
     alert(err.detail || 'Error al actualizar el estado');
     return;
   }
   closeModal();
+}
+
+// --- Sin conexión: cola de cambios de estatus ---------------------------------
+// Solo el estatus (lo que marcan conductores y supervisores toda la noche) se
+// puede hacer sin señal. Asignar/editar camiones sigue necesitando conexión.
+const GATEWAY_ERRORS = [502, 503, 504];
+
+function queueStatus(spotId, status, comentario) {
+  OfflineQueue.add({
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    userId: window.APP.userId,
+    spotId,
+    status,
+    comentario,
+    // Hora del SERVIDOR (no la del dispositivo) en que se marcó.
+    ts: window.LiveClock ? window.LiveClock.nowIso() : new Date().toISOString(),
+  });
+  const spot = spotsById[spotId];
+  if (spot) {
+    spot.status = status;
+    spot.comentario = comentario;
+    updateTile(spot);
+  }
+  refreshOfflineBanner();
+  setTimeout(flushQueue, 4000);
+}
+
+// Lo pendiente de esta persona se vuelve a pintar encima de lo que diga el
+// servidor, para que un refresco del tablero no "deshaga" lo que marcó.
+function applyPendingOverlay() {
+  if (!window.OfflineQueue) return;
+  for (const item of OfflineQueue.pending(window.APP.userId)) {
+    const spot = spotsById[item.spotId];
+    if (spot) {
+      spot.status = item.status;
+      spot.comentario = item.comentario;
+    }
+  }
+}
+
+async function sendQueued(item) {
+  try {
+    const res = await fetch(`/api/spots/${item.spotId}/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: item.status, comentario: item.comentario, client_ts: item.ts }),
+    });
+    if (res.ok) return { ok: true };
+    if (res.status === 401) {
+      window.location.href = '/login';
+      return { retry: true };
+    }
+    if (res.status >= 500) return { retry: true };
+    const err = await res.json().catch(() => ({}));
+    return { rejected: true, detail: err.detail || `Error ${res.status}` };
+  } catch (err) {
+    return { retry: true };
+  }
+}
+
+async function flushQueue() {
+  if (!window.OfflineQueue || !OfflineQueue.count(window.APP.userId)) return;
+  const result = await OfflineQueue.flush(window.APP.userId, sendQueued);
+  if (!result) return;
+  refreshOfflineBanner();
+  for (const item of result.applied) {
+    const spot = spotsById[item.spotId];
+    if (spot) updateTile(spot); // quita la marca de "pendiente de enviar"
+  }
+  if (result.rejected.length) {
+    const lines = result.rejected.map((r) => `• ${(spotsById[r.item.spotId] || {}).code || r.item.spotId}: ${r.detail}`);
+    alert('Algunos cambios hechos sin conexión no se pudieron aplicar:\n\n' + lines.join('\n'));
+    loadBoard(datePicker.value); // vuelve a lo que dice el servidor
+  }
+}
+
+function refreshOfflineBanner() {
+  const banner = document.getElementById('offline-banner');
+  if (!banner || !window.OfflineQueue) return;
+  const n = OfflineQueue.count(window.APP.userId);
+  if (!n && navigator.onLine !== false) {
+    banner.style.display = 'none';
+    return;
+  }
+  banner.textContent = n
+    ? `📡 ${n} cambio(s) sin enviar: se enviarán solos al volver la conexión, con la hora en que los marcaste.`
+    : '📡 Sin conexión: puedes seguir marcando camiones; se enviarán al reconectar.';
+  banner.style.display = 'block';
+}
+
+// --- Contador "faltan por cargar" -----------------------------------------------
+// Cuenta camiones (Spots con camión ese día), no Spots: un Spot vacío no tiene
+// nada que cargar y no debe impedir que el contador llegue a cero.
+function updateProgress() {
+  const strip = document.getElementById('progress-strip');
+  if (!strip) return;
+  const counts = { pendiente: 0, carga_en_piso: 0, cargado: 0, no_cargado: 0 };
+  let total = 0;
+  for (const s of Object.values(spotsById)) {
+    if (!s.truck) continue;
+    counts[s.status] = (counts[s.status] || 0) + 1;
+    total++;
+  }
+  if (!total) {
+    strip.style.display = 'none';
+    return;
+  }
+  const faltan = counts.pendiente + counts.carga_en_piso;
+  const isToday = datePicker.value === window.APP.today;
+  const pct = (n) => `${(100 * n) / total}%`;
+  const set = (id, v) => {
+    document.getElementById(id).textContent = v;
+  };
+  set('ps-faltan', faltan);
+  set('ps-faltan-label', isToday ? 'faltan por cargar' : 'sin cargar ese día');
+  set('ps-cargado', counts.cargado);
+  set('ps-piso', counts.carga_en_piso);
+  set('ps-nocargado', counts.no_cargado);
+  set('ps-total', total);
+  document.getElementById('ps-seg-cargado').style.width = pct(counts.cargado);
+  document.getElementById('ps-seg-piso').style.width = pct(counts.carga_en_piso);
+  document.getElementById('ps-seg-nocargado').style.width = pct(counts.no_cargado);
+
+  let timeText = '';
+  let urgent = false;
+  if (isToday) {
+    const remaining = window.LiveClock ? window.LiveClock.shiftRemainingMs() : undefined;
+    if (faltan === 0) {
+      timeText = '✔ Todo resuelto';
+    } else if (remaining === undefined) {
+      timeText = ''; // el reloj aún se está sincronizando con el servidor
+    } else if (remaining === null) {
+      timeText = 'Turno cerrado';
+    } else {
+      const totalMin = Math.max(0, Math.ceil(remaining / 60000));
+      const h = Math.floor(totalMin / 60);
+      const m = totalMin % 60;
+      timeText = `⏰ Cierra en ${h ? `${h} h ` : ''}${m} min`;
+      urgent = totalMin <= 60;
+    }
+  }
+  set('ps-time', timeText);
+  strip.classList.toggle('done', faltan === 0);
+  strip.classList.toggle('urgent', urgent);
+  strip.style.display = '';
 }
 
 let searchTimeout;
@@ -405,12 +654,20 @@ document.getElementById('truck-search').addEventListener('input', (e) => {
   }, 250);
 });
 
+const NEEDS_CONNECTION_MSG = 'Sin conexión: este cambio necesita internet (solo marcar el estatus de un camión funciona sin conexión). Intenta de nuevo cuando vuelva la señal.';
+
 async function assignTruck(truckId) {
-  const res = await fetch(`/api/spots/${currentSpotId}/assign`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ truck_id: truckId }),
-  });
+  let res;
+  try {
+    res = await fetch(`/api/spots/${currentSpotId}/assign`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ truck_id: truckId }),
+    });
+  } catch (err) {
+    alert(NEEDS_CONNECTION_MSG);
+    return;
+  }
   if (!res.ok) {
     const err = await res.json();
     alert(err.detail || 'Error al asignar el camión');
@@ -425,15 +682,21 @@ async function saveTruckEdit() {
     alert('La placa es obligatoria.');
     return;
   }
-  const res = await fetch(`/api/spots/${currentSpotId}/truck`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      hod_code: document.getElementById('edit-hod').value.trim() || null,
-      placa,
-      sv_code: document.getElementById('edit-sv').value.trim() || null,
-    }),
-  });
+  let res;
+  try {
+    res = await fetch(`/api/spots/${currentSpotId}/truck`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        hod_code: document.getElementById('edit-hod').value.trim() || null,
+        placa,
+        sv_code: document.getElementById('edit-sv').value.trim() || null,
+      }),
+    });
+  } catch (err) {
+    alert(NEEDS_CONNECTION_MSG);
+    return;
+  }
   if (!res.ok) {
     const err = await res.json();
     alert(err.detail || 'Error al guardar los cambios');
@@ -443,12 +706,23 @@ async function saveTruckEdit() {
 }
 
 async function unassignTruck() {
-  const res = await fetch(`/api/spots/${currentSpotId}/assign`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ truck_id: null }),
-  });
-  if (res.ok) closeModal();
+  let res;
+  try {
+    res = await fetch(`/api/spots/${currentSpotId}/assign`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ truck_id: null }),
+    });
+  } catch (err) {
+    alert(NEEDS_CONNECTION_MSG);
+    return;
+  }
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    alert(err.detail || 'Error al quitar el camión');
+    return;
+  }
+  closeModal();
 }
 
 datePicker.addEventListener('change', (e) => loadBoard(e.target.value));
@@ -470,9 +744,22 @@ document.getElementById('zoom-out').addEventListener('click', () => {
   mapEl.style.transform = `scale(${zoom})`;
 });
 
+// El WebSocket ya empuja los cambios al instante (no hace falta esperar a un
+// intervalo), pero NO reenvía lo que pasó mientras estuvo caído -- en un
+// teléfono/tablet que se duerme o pierde señal eso pasa todo el tiempo. Por
+// eso, además: al reconectar, al volver a la app y cada 30 s se relee el
+// tablero (ver `refreshBoardQuietly`).
+let wsHasConnected = false;
+
 function connectWS() {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   const ws = new WebSocket(`${proto}://${location.host}/ws/board`);
+  ws.onopen = () => {
+    if (wsHasConnected) refreshBoardQuietly();
+    wsHasConnected = true;
+    if (window.LiveClock) window.LiveClock.setLive(true);
+    flushQueue(); // volvió la conexión: enviar lo que se marcó sin señal
+  };
   ws.onmessage = (ev) => {
     const msg = JSON.parse(ev.data);
     if (msg.type === 'layout_update') {
@@ -493,7 +780,10 @@ function connectWS() {
       updateTile(spot);
     }
   };
-  ws.onclose = () => setTimeout(connectWS, 2000);
+  ws.onclose = () => {
+    if (window.LiveClock) window.LiveClock.setLive(false);
+    setTimeout(connectWS, 2000);
+  };
 }
 
 // --- Editor de layout (admin) ---------------------------------------------
@@ -951,3 +1241,28 @@ if (editModeBtn) {
 
 loadBoard(datePicker.value);
 connectWS();
+
+// Red de seguridad del tiempo real (ver comentario en connectWS).
+const BOARD_REFRESH_MS = 30000;
+setInterval(refreshBoardQuietly, BOARD_REFRESH_MS);
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) refreshBoardQuietly();
+});
+window.addEventListener('online', refreshBoardQuietly);
+// clock.js avisa en el segundo exacto en que abre/cierra el turno.
+window.addEventListener('shiftchange', refreshBoardQuietly);
+
+// Sin conexión: enviar lo pendiente en cuanto vuelva la señal (o cada 10 s por
+// si `online` no se dispara, p. ej. wifi conectado pero sin internet), y
+// mantener al día el aviso de cambios sin enviar y el contador del turno.
+window.addEventListener('online', () => {
+  refreshOfflineBanner();
+  flushQueue();
+});
+window.addEventListener('offline', refreshOfflineBanner);
+setInterval(flushQueue, 10000);
+setInterval(updateProgress, 20000);
+window.addEventListener('clocksync', updateProgress);
+if (window.OfflineQueue) OfflineQueue.onChange(refreshOfflineBanner);
+refreshOfflineBanner();
+setTimeout(flushQueue, 1500); // p. ej. se cerró la pestaña con cambios pendientes

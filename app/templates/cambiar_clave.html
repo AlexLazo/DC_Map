@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cambiar contraseña - DC Map</title>
+<link rel="stylesheet" href="/static/css/styles.css?v={{ asset_version }}">
+</head>
+<body class="login-body">
+  <form class="login-card" method="post" action="/cambiar-clave">
+    <h1>Cambiar contraseña</h1>
+    <p class="subtitle">{{ user.full_name }} ({{ user.username }})</p>
+    {% if forced %}<div class="info">Por seguridad debes crear una contraseña nueva antes de continuar.</div>{% endif %}
+    {% if error %}<div class="error">{{ error }}</div>{% endif %}
+    <label for="current">{{ 'Contraseña temporal / actual' if forced else 'Contraseña actual' }}</label>
+    <input id="current" type="password" name="current" required autofocus autocomplete="current-password">
+    <label for="new">Contraseña nueva (mínimo {{ min_length }} caracteres)</label>
+    <input id="new" type="password" name="new" required minlength="{{ min_length }}" autocomplete="new-password">
+    <label for="confirm">Repite la contraseña nueva</label>
+    <input id="confirm" type="password" name="confirm" required minlength="{{ min_length }}" autocomplete="new-password">
+    <button type="submit">Guardar contraseña</button>
+    <div class="login-links">
+      {% if not forced %}<a href="/">&larr; Volver</a>{% endif %}
+      <button type="submit" formaction="/logout" formnovalidate class="link-button">Salir</button>
+    </div>
+  </form>
+</body>
+</html>

@@ -1,6 +1,6 @@
 from datetime import date, datetime
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, false, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -16,6 +16,9 @@ class User(Base):
     role: Mapped[str] = mapped_column(String(20))  # super_admin | admin | supervisor | conductor_patio
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    # True = debe crear una contraseña nueva antes de usar el sistema (tras un
+    # restablecimiento por un admin, o mientras siga la contraseña de fábrica).
+    must_change_password: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
 
 
 class Truck(Base):

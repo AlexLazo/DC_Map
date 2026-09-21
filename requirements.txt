@@ -7,3 +7,4 @@ itsdangerous
 openpyxl
 python-dotenv
 psycopg2-binary
+tzdata

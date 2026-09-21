@@ -4,6 +4,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 from app import models
@@ -13,8 +14,11 @@ from app.excel_sync import EXCEL_PATH, sync_truck_data
 from app.routers import admin as admin_router
 from app.routers import auth as auth_router
 from app.routers import board as board_router
+from app.routers import clock as clock_router
+from app.routers import pwa as pwa_router
 from app.routers import ws as ws_router
-from app.security import hash_password
+from app.schema_upgrade import ensure_schema
+from app.security import DEFAULT_PASSWORD, hash_password, verify_password
 from app.ws_manager import manager
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -28,17 +32,37 @@ def ensure_default_admin() -> None:
             db.add(
                 models.User(
                     username="admin",
-                    password_hash=hash_password("admin123"),
+                    password_hash=hash_password(DEFAULT_PASSWORD),
                     full_name="Administrador",
                     role="super_admin",
                     active=True,
+                    must_change_password=True,
                 )
             )
             db.commit()
             print("=" * 60)
-            print("Usuario admin creado -> usuario: admin / contraseña: admin123")
-            print("Cambia esta contraseña desde /admin apenas ingreses.")
+            print(f"Usuario admin creado -> usuario: admin / contraseña: {DEFAULT_PASSWORD}")
+            print("El sistema le pedirá cambiarla en el primer ingreso.")
             print("=" * 60)
+    finally:
+        db.close()
+
+
+def flag_default_passwords() -> None:
+    """Cualquier cuenta que TODAVÍA use la contraseña de fábrica queda obligada a
+    cambiarla en su próximo ingreso. Cubre bases ya existentes (p. ej. la de
+    Railway, donde `admin` sigue con la de fábrica) sin tocar las cuentas que ya
+    la cambiaron. Cuesta un hash por usuario al arrancar: son pocas cuentas."""
+    db = SessionLocal()
+    try:
+        flagged = []
+        for user in db.query(models.User).filter(models.User.must_change_password.is_(False)):
+            if verify_password(DEFAULT_PASSWORD, user.password_hash):
+                user.must_change_password = True
+                flagged.append(user.username)
+        if flagged:
+            db.commit()
+            print(f"[seguridad] Cuentas con la contraseña de fábrica; deberán cambiarla al ingresar: {', '.join(flagged)}")
     finally:
         db.close()
 
@@ -106,7 +130,9 @@ def _sync_excel_on_startup() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(engine)
+    ensure_schema()
     ensure_default_admin()
+    flag_default_passwords()
     _sync_excel_on_startup()
     watcher = asyncio.create_task(_watch_excel_for_changes())
     yield
@@ -115,9 +141,16 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="DC Map - Control de Carga", lifespan=lifespan)
 app.add_middleware(SessionMiddleware, secret_key=SESSION_SECRET)
+# El tablero se relee cada 30 s desde cada teléfono/tablet (ver
+# `refreshBoardQuietly` en board.js) -- sin comprimir son ~36 KB por lectura,
+# ~34 MB por dispositivo en un turno de 8 h de datos móviles. El JSON
+# comprime ~8-10x. (No afecta a los WebSockets: solo procesa HTTP.)
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
 app.include_router(auth_router.router)
 app.include_router(board_router.router)
+app.include_router(clock_router.router)
+app.include_router(pwa_router.router)
 app.include_router(admin_router.router)
 app.include_router(ws_router.router)

@@ -5,6 +5,10 @@ import os
 
 _ITERATIONS = 200_000
 
+# Contraseña con la que se crea la cuenta inicial: conocida por definición, así que
+# el sistema obliga a cambiarla (ver flag_default_passwords en main.py).
+DEFAULT_PASSWORD = "admin123"
+
 
 def hash_password(password: str) -> str:
     salt = os.urandom(16)

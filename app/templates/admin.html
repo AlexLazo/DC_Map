@@ -11,6 +11,7 @@
   <div class="topbar-left"><h1>Administración</h1></div>
   <div class="topbar-right">
     <span class="user-badge">{{ user.full_name }} · {{ 'Super Admin' if user.role == 'super_admin' else 'Admin' }}</span>
+    <a href="/cambiar-clave" class="btn-link" title="Cambiar mi contraseña">🔑 Contraseña</a>
     <a href="/" class="btn-link">&larr; Tablero</a>
     <form method="post" action="/logout" class="inline"><button class="btn-link" type="submit">Salir</button></form>
   </div>
@@ -25,6 +26,14 @@
 </nav>
 
 <main class="admin-main">
+  {% if temp_password %}
+  <section class="admin-section temp-password-box">
+    <h3>🔑 Contraseña temporal para {{ temp_password.full_name }} ({{ temp_password.username }})</h3>
+    <span class="temp-password-value" id="temp-password-value">{{ temp_password.password }}</span>
+    <button type="button" class="btn-primary-sm" id="copy-temp-password">Copiar</button>
+    <p><b>Anótala o cópiala ahora: no se vuelve a mostrar.</b> Al ingresar con ella, el sistema le pedirá crear una contraseña nueva.</p>
+  </section>
+  {% endif %}
   <section class="admin-section">
     <h2>Usuarios</h2>
     <div class="table-scroll">
@@ -53,7 +62,7 @@
           </tr>
           {% else %}
           <tr>
-            <td>{{ u.username }}</td><td>{{ u.full_name }}</td>
+            <td>{{ u.username }}{% if u.must_change_password %}<span class="tag-must-change" title="Debe crear una contraseña nueva al ingresar">🔑 cambio pendiente</span>{% endif %}</td><td>{{ u.full_name }}</td>
             <td><span class="role-badge role-{{ u.role }}">{{ role_labels.get(u.role, u.role) }}</span></td>
             <td><span class="status-dot {{ 'on' if u.active else 'off' }}"></span>{{ 'Activo' if u.active else 'Inactivo' }}</td>
             <td>
@@ -61,6 +70,11 @@
                 <span class="muted small">Solo Super Admin</span>
               {% else %}
               <a href="/admin?edit={{ u.id }}" class="btn-link">Editar</a>
+              {% if u.id != user.id %}
+              <form method="post" action="/admin/users/{{ u.id }}/reset-password" class="inline" onsubmit="return confirm('¿Restablecer la contraseña de {{ u.username }}? Se generará una temporal y deberá cambiarla al ingresar.');">
+                <button class="btn-link" type="submit">Restablecer contraseña</button>
+              </form>
+              {% endif %}
               <form method="post" action="/admin/users/{{ u.id }}/toggle" class="inline">
                 <button class="btn-link" type="submit">{{ 'Desactivar' if u.active else 'Activar' }}</button>
               </form>
@@ -116,5 +130,29 @@
     </form>
   </section>
 </main>
+<script src="/static/js/clock.js?v={{ asset_version }}"></script>
+{% if temp_password %}
+<script>
+(function () {
+  const btn = document.getElementById('copy-temp-password');
+  if (!btn) return;
+  btn.addEventListener('click', async () => {
+    const value = document.getElementById('temp-password-value').textContent.trim();
+    try {
+      await navigator.clipboard.writeText(value);
+      btn.textContent = '¡Copiada!';
+    } catch (err) {
+      // sin permiso de portapapeles (http en red local): se deja seleccionada para copiar a mano
+      const range = document.createRange();
+      range.selectNodeContents(document.getElementById('temp-password-value'));
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      btn.textContent = 'Selecciónala y copia';
+    }
+  });
+})();
+</script>
+{% endif %}
 </body>
 </html>
