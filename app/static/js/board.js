@@ -431,7 +431,7 @@ function openModal(spotId) {
       isToday &&
       canOperate &&
       (isAdmin ||
-        (CURRENT_ROLE === 'conductor_patio' && ['carga_en_piso', 'cargado'].includes(st)) ||
+        CURRENT_ROLE === 'conductor_patio' || // el conductor usa los cuatro estatus
         (CURRENT_ROLE === 'supervisor' && ['no_cargado', 'pendiente'].includes(st)));
     btn.style.display = allowed ? '' : 'none';
   });

@@ -22,7 +22,9 @@ router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
 
 VALID_STATUSES = {"pendiente", "carga_en_piso", "cargado", "no_cargado"}
-CONDUCTOR_PATIO_STATUSES = {"carga_en_piso", "cargado"}
+# Quién puede marcar qué estatus: el Conductor de Patio, que es quien está en el
+# patio viendo cada camión, usa los cuatro (No Cargado siempre exige comentario);
+# Admin/Super Admin también. Al Supervisor se le restringe a No Cargado/Pendiente.
 SUPERVISOR_STATUSES = {"no_cargado", "pendiente"}
 STATUS_LABELS_ES = {
     "pendiente": "Pendiente",
@@ -224,8 +226,6 @@ async def update_status(
     require_operating_hours(user, to_local(when))
     if payload.status not in VALID_STATUSES:
         raise HTTPException(400, "Estado inválido")
-    if user.role == "conductor_patio" and payload.status not in CONDUCTOR_PATIO_STATUSES:
-        raise HTTPException(403, "Conductor de Patio solo puede marcar Carga en Piso o Cargado")
     if user.role == "supervisor" and payload.status not in SUPERVISOR_STATUSES:
         raise HTTPException(403, "Supervisor solo puede marcar No Cargado o reiniciar a Pendiente")
     if payload.status == "no_cargado" and not (payload.comentario and payload.comentario.strip()):
