@@ -110,3 +110,31 @@ class ActivityLog(Base):
 
     user: Mapped["User | None"] = relationship()
     spot: Mapped["Spot | None"] = relationship()
+
+
+class EmailRecipient(Base):
+    """Destinatario del correo diario de cierre (Gerente y áreas del CD). Se
+    administra en /admin/config; no necesita ser usuario del sistema."""
+
+    __tablename__ = "email_recipients"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    email: Mapped[str] = mapped_column(String(160), unique=True, index=True)
+    name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class EmailDigestLog(Base):
+    """Un renglón por día operativo con el resultado del envío AUTOMÁTICO. Es lo
+    que evita mandar el correo dos veces si Railway reinicia el contenedor a
+    las 9, y lo que permite reintentar si el proveedor falló."""
+
+    __tablename__ = "email_digest_log"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    fecha: Mapped[date] = mapped_column(Date, unique=True, index=True)
+    ok: Mapped[bool] = mapped_column(Boolean, default=False)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    last_attempt_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    detail: Mapped[str] = mapped_column(Text, default="")

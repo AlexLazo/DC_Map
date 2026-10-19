@@ -9,6 +9,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from app import models
 from app.config import SESSION_SECRET
+from app.daily_digest import run_digest_scheduler
 from app.database import Base, SessionLocal, engine
 from app.excel_sync import EXCEL_PATH, sync_truck_data
 from app.routers import admin as admin_router
@@ -135,8 +136,10 @@ async def lifespan(app: FastAPI):
     flag_default_passwords()
     _sync_excel_on_startup()
     watcher = asyncio.create_task(_watch_excel_for_changes())
+    digest = asyncio.create_task(run_digest_scheduler())
     yield
     watcher.cancel()
+    digest.cancel()
 
 
 app = FastAPI(title="DC Map - Control de Carga", lifespan=lifespan)

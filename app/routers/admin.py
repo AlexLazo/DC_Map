@@ -6,6 +6,7 @@ from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import RedirectResponse, Response, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from openpyxl import Workbook
@@ -14,7 +15,7 @@ from openpyxl.utils import get_column_letter
 from sqlalchemy import func, text
 from sqlalchemy.orm import Session, joinedload
 
-from app import models
+from app import daily_digest, emailer, models
 from app.activity_log import log_activity
 from app.asset_version import asset_version
 from app.auth import get_current_user, require_role, require_super_admin
@@ -58,6 +59,8 @@ ACTION_LABELS = {
     "user_reset_password": "Restablecer contraseña",
     "user_password": "Cambio de contraseña propia",
     "records_restore": "Restauración desde respaldo",
+    "email_recipient": "Destinatarios del correo diario",
+    "email_send": "Envío manual del correo diario",
 }
 
 
@@ -866,6 +869,11 @@ async def admin_config(
         {
             "user": user,
             "counts": counts,
+            "recipients": db.query(models.EmailRecipient).order_by(models.EmailRecipient.email).all(),
+            "mail_provider": emailer.provider(),
+            "digest_time": daily_digest.digest_time_label(),
+            "digest_log": db.query(models.EmailDigestLog).order_by(models.EmailDigestLog.fecha.desc()).limit(7).all(),
+            "mail_flash": request.session.pop("mail_flash", None),
             "fecha_min": min(mins).isoformat() if mins else "",
             "fecha_max": max(maxs).isoformat() if maxs else "",
             "reset_done": (reset_ds, reset_al) if reset_ds is not None and reset_al is not None else None,
@@ -875,6 +883,82 @@ async def admin_config(
             "asset_version": asset_version(),
         },
     )
+
+
+# --- Correo diario de cierre ----------------------------------------------------
+# Destinatarios del resumen automático de las 9 AM (ver app/daily_digest.py). No
+# tienen que ser usuarios del sistema: son el Gerente y las áreas del CD.
+
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def _mail_redirect(request: Request, message: str, ok: bool) -> RedirectResponse:
+    request.session["mail_flash"] = {"ok": ok, "message": message}
+    return RedirectResponse("/admin/config#correo", status_code=303)
+
+
+@router.post("/admin/config/email/recipients")
+async def add_email_recipient(
+    request: Request,
+    email: str = Form(...),
+    name: str = Form(""),
+    current_user: models.User = Depends(require_role("admin")),
+    db: Session = Depends(get_db),
+):
+    email = email.strip().lower()
+    if not _EMAIL_RE.match(email) or len(email) > 160:
+        return _mail_redirect(request, f"«{email}» no parece un correo válido.", False)
+    if db.query(models.EmailRecipient).filter_by(email=email).first():
+        return _mail_redirect(request, f"{email} ya está en la lista.", False)
+    db.add(models.EmailRecipient(email=email, name=name.strip()[:120] or None))
+    log_activity(db, current_user, "email_recipient", detail=f"Destinatario agregado: {email}")
+    db.commit()
+    return RedirectResponse("/admin/config#correo", status_code=303)
+
+
+@router.post("/admin/config/email/recipients/{rid}/toggle")
+async def toggle_email_recipient(
+    rid: int,
+    current_user: models.User = Depends(require_role("admin")),
+    db: Session = Depends(get_db),
+):
+    target = db.get(models.EmailRecipient, rid)
+    if target:
+        target.active = not target.active
+        log_activity(db, current_user, "email_recipient", detail=f"Destinatario {'activado' if target.active else 'desactivado'}: {target.email}")
+        db.commit()
+    return RedirectResponse("/admin/config#correo", status_code=303)
+
+
+@router.post("/admin/config/email/recipients/{rid}/delete")
+async def delete_email_recipient(
+    rid: int,
+    current_user: models.User = Depends(require_role("admin")),
+    db: Session = Depends(get_db),
+):
+    target = db.get(models.EmailRecipient, rid)
+    if target:
+        log_activity(db, current_user, "email_recipient", detail=f"Destinatario eliminado: {target.email}")
+        db.delete(target)
+        db.commit()
+    return RedirectResponse("/admin/config#correo", status_code=303)
+
+
+@router.post("/admin/config/email/send-now")
+async def send_digest_now(
+    request: Request,
+    current_user: models.User = Depends(require_role("admin")),
+    db: Session = Depends(get_db),
+):
+    """Manda el resumen de AHORA a los destinatarios activos. No toca el registro
+    del envío automático: sirve para probar y no impide el de las 9 AM."""
+    try:
+        n = await run_in_threadpool(daily_digest.send_digest, db)
+    except emailer.MailError as exc:
+        return _mail_redirect(request, str(exc), False)
+    log_activity(db, current_user, "email_send", detail=f"Resumen enviado manualmente a {n} destinatario(s)")
+    db.commit()
+    return _mail_redirect(request, f"Resumen enviado a {n} destinatario(s).", True)
 
 
 @router.get("/admin/config/backup.json")
