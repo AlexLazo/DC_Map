@@ -78,3 +78,16 @@ guardado — usa el selector de fecha en la parte superior para consultarlo
   solo instala `psycopg2-binary`.
 - Corre uvicorn detrás de un proceso persistente (servicio de Windows, Docker,
   systemd, etc.) en vez de `--reload`.
+
+## Correo diario de cierre
+
+Todos los días a las 9:00 AM (hora de El Salvador) la app envía por correo el
+estatus de las cargas del día: % cargado, avance por supervisor, camiones no
+cargados y los que aún faltan. Los destinatarios se administran en
+`/admin/config` → «Correo diario de cierre» (ahí mismo hay un botón «Enviar
+resumen ahora» para probar). Si el proveedor falla, reintenta hasta 3 veces
+(cada 5 min); si la app reinicia a esa hora, no duplica el envío.
+
+Variables en Railway (ver `.env.example`): `MAIL_FROM` y `RESEND_API_KEY`
+(o `SMTP_*`). Con Resend hay que verificar un dominio para poder enviar a
+direcciones que no sean la del dueño de la cuenta.

@@ -41,6 +41,49 @@
     <a class="btn-primary-sm" href="/admin/config/backup.json">⬇ Descargar respaldo completo (JSON)</a>
   </section>
 
+  <section class="admin-section" id="correo">
+    <h2>Correo diario de cierre</h2>
+    <p class="muted small">Cada día a las <b>{{ digest_time }}</b> (hora del CD) se envía automáticamente el estatus de las cargas del día: porcentaje cargado, avance por supervisor, camiones no cargados y los que aún faltan.</p>
+    {% if mail_flash %}<p class="{{ 'reset-ok' if mail_flash.ok else 'reset-preview' }}">{{ '✔' if mail_flash.ok else '⚠' }} {{ mail_flash.message }}</p>{% endif %}
+    {% if mail_provider %}
+    <p class="small"><span class="status-dot on"></span>Envío configurado ({{ mail_provider }}).</p>
+    {% else %}
+    <p class="small"><span class="status-dot off"></span>Envío <b>sin configurar</b>: agrega <code>MAIL_FROM</code> y <code>RESEND_API_KEY</code> en las variables de Railway.</p>
+    {% endif %}
+    <div class="table-scroll">
+      <table class="admin-table">
+        <thead><tr><th>Correo</th><th>Nombre / área</th><th>Activo</th><th></th></tr></thead>
+        <tbody>
+          {% for r in recipients %}
+          <tr>
+            <td>{{ r.email }}</td><td>{{ r.name or '—' }}</td>
+            <td><span class="status-dot {{ 'on' if r.active else 'off' }}"></span>{{ 'Activo' if r.active else 'Inactivo' }}</td>
+            <td>
+              <form method="post" action="/admin/config/email/recipients/{{ r.id }}/toggle" class="inline"><button class="btn-link" type="submit">{{ 'Desactivar' if r.active else 'Activar' }}</button></form>
+              <form method="post" action="/admin/config/email/recipients/{{ r.id }}/delete" class="inline" onsubmit="return confirm('¿Quitar a {{ r.email }} de la lista?');"><button class="btn-link danger" type="submit">Quitar</button></form>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="4" class="muted small">Aún no hay destinatarios: no se enviará nada hasta agregar al menos uno.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <form method="post" action="/admin/config/email/recipients" class="inline-form">
+      <input name="email" type="email" placeholder="correo@empresa.com" required>
+      <input name="name" placeholder="nombre o área (opcional)">
+      <button type="submit">Agregar destinatario</button>
+    </form>
+    <form method="post" action="/admin/config/email/send-now" class="inline-form" onsubmit="return confirm('¿Enviar ahora el resumen a todos los destinatarios activos?');">
+      <button type="submit" class="btn-primary-sm">✉ Enviar resumen ahora</button>
+    </form>
+    {% if digest_log %}
+    <p class="muted small">Últimos envíos automáticos:
+      {% for l in digest_log %}<br>{{ l.fecha.strftime('%d/%m/%Y') }} · {{ '✔' if l.ok else '✘' }} {{ l.detail or 'en curso' }}{% if not l.ok %} (intento {{ l.attempts }}){% endif %}{% endfor %}
+    </p>
+    {% endif %}
+  </section>
+
   {% if reset_done %}
   <section class="admin-section">
     <p class="reset-ok">✔ Registros reiniciados: se borraron {{ reset_done[0] }} estatus diario(s) y {{ reset_done[1] }} evento(s) de bitácora. Usuarios, camiones y layout siguen intactos.</p>
