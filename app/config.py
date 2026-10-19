@@ -5,6 +5,13 @@ from dotenv import load_dotenv
 load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./dc_map.db")
+# Railway entrega `postgresql://` (o el viejo `postgres://`). Desde SQLAlchemy 2.1 eso
+# apunta al driver `psycopg` (v3), pero aquí está instalado `psycopg2-binary`: sin fijar
+# el driver, el arranque muere con "No module named 'psycopg'".
+for _prefix in ("postgres://", "postgresql://"):
+    if DATABASE_URL.startswith(_prefix):
+        DATABASE_URL = "postgresql+psycopg2://" + DATABASE_URL[len(_prefix):]
+        break
 SESSION_SECRET = os.getenv("SESSION_SECRET", "change-me-in-production-please")
 
 # Zona horaria del CD y horario del turno. Railway corre en UTC (El Salvador es
